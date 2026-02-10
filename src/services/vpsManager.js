@@ -390,6 +390,36 @@ class VPSManager {
       await ssh.exec('nginx -t 2>&1');
       await ssh.exec('systemctl reload nginx');
 
+      // If first deploy never completed, create DNS A-records and obtain SSL
+      const isRecovery = !domainRow.site_path || !domainRow.nginx_config_path;
+      if (isRecovery && domainRow.cloudflare_zone_id) {
+        progress('Creating DNS A-records (Cloudflare)');
+        try {
+          const cf = this._getCloudflare();
+          await cf.addARecord(domainRow.cloudflare_zone_id, domainRow.domain, vps.ip);
+          await cf.addARecord(domainRow.cloudflare_zone_id, `www.${domainRow.domain}`, vps.ip);
+        } catch (err) {
+          logger.warn('Cloudflare DNS record creation skipped', { error: err.message });
+        }
+
+        progress('Obtaining SSL certificate');
+        try {
+          const ssl = new SSLManager(ssh);
+          const sslResult = await ssl.obtainCertificate(
+            domainRow.domain,
+            this.config.ssl.adminEmail,
+            false,
+            this.config.ssl.staging
+          );
+          this.db.updateDomain(domainId, {
+            ssl_status: sslResult.success ? 'active' : 'pending',
+            ssl_expiry: sslResult.expiry,
+          });
+        } catch (err) {
+          logger.warn('SSL certificate skipped', { error: err.message });
+        }
+      }
+
       this.db.logActivity({
         user_telegram_id: userTelegramId,
         action: 'update_domain_files',
@@ -403,7 +433,7 @@ class VPSManager {
       await fileManager.removeFile(zipFilePath);
       ssh.disconnect();
 
-      return { success: true, fileCount, totalSize };
+      return { success: true, fileCount, totalSize, isRecovery };
     } catch (error) {
       this.db.logActivity({
         user_telegram_id: userTelegramId,

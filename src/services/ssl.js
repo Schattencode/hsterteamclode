@@ -9,13 +9,14 @@ class SSLManager {
    * Obtain SSL certificate for any domain/subdomain via certbot + nginx plugin.
    */
   async obtainCertificate(domain, email, isSubdomain = false, staging = false) {
-    // Ensure certbot is installed
+    // Ensure certbot is installed and working
     try {
-      await this.ssh.exec('which certbot');
+      await this.ssh.exec('certbot --version');
     } catch {
       logger.info('Installing certbot', { domain });
       await this.ssh.exec(
-        'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx'
+        'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx',
+        120000
       );
     }
 
