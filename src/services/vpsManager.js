@@ -114,18 +114,26 @@ class VPSManager {
       progress('Reloading Nginx');
       await ssh.exec('systemctl reload nginx');
 
-      // Step 11: Obtain SSL (DNS has had time to propagate by now)
+      // Step 11: Obtain SSL with retry (DNS may need extra seconds)
       progress('Obtaining SSL certificate');
       let sslResult = { success: false, expiry: null };
-      try {
-        sslResult = await ssl.obtainCertificate(
-          domain,
-          this.config.ssl.adminEmail,
-          false,
-          this.config.ssl.staging
-        );
-      } catch (err) {
-        logger.warn('SSL certificate failed, site will work on HTTP', { domain, error: err.message });
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          sslResult = await ssl.obtainCertificate(
+            domain,
+            this.config.ssl.adminEmail,
+            false,
+            this.config.ssl.staging
+          );
+          break;
+        } catch (err) {
+          if (attempt < 2) {
+            progress('SSL: waiting for DNS propagation, retrying...');
+            await new Promise(r => setTimeout(r, 15000));
+          } else {
+            logger.warn('SSL certificate failed, site will work on HTTP', { domain, error: err.message });
+          }
+        }
       }
 
       // Step 11: Update database
@@ -202,6 +210,17 @@ class VPSManager {
       progress('Connecting to VPS');
       await ssh.connect();
 
+      // Create DNS A record EARLY so it propagates while we work
+      progress(`Creating DNS A record for ${fullDomain}`);
+      try {
+        const cf = this._getCloudflare();
+        if (domainRow.cloudflare_zone_id) {
+          await cf.addARecord(domainRow.cloudflare_zone_id, fullDomain, vps.ip);
+        }
+      } catch (err) {
+        logger.warn('Cloudflare subdomain DNS skipped', { error: err.message });
+      }
+
       const { phpSocket } = await this._ensureVPS(ssh, progress);
 
       const sitePath = `/var/www/${fullDomain}`;
@@ -234,34 +253,32 @@ class VPSManager {
       progress('Activating site configuration');
       await ssh.exec(`ln -sf ${configPath} ${enabledPath}`);
 
-      // Add subdomain A record via Cloudflare
-      progress(`Creating DNS A record for ${fullDomain}`);
-      try {
-        const cf = this._getCloudflare();
-        if (domainRow.cloudflare_zone_id) {
-          await cf.addARecord(domainRow.cloudflare_zone_id, fullDomain, vps.ip);
-        }
-      } catch (err) {
-        logger.warn('Cloudflare subdomain DNS skipped', { error: err.message });
-      }
-
       progress('Testing Nginx configuration');
       await ssh.exec('nginx -t');
 
       progress('Reloading Nginx');
       await ssh.exec('systemctl reload nginx');
 
+      // SSL with retry (DNS may need a few extra seconds)
       progress('Obtaining SSL certificate');
       let sslResult = { success: false, expiry: null };
-      try {
-        sslResult = await ssl.obtainCertificate(
-          fullDomain,
-          this.config.ssl.adminEmail,
-          true,
-          this.config.ssl.staging
-        );
-      } catch (err) {
-        logger.warn('SSL certificate failed for subdomain', { fullDomain, error: err.message });
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          sslResult = await ssl.obtainCertificate(
+            fullDomain,
+            this.config.ssl.adminEmail,
+            true,
+            this.config.ssl.staging
+          );
+          break;
+        } catch (err) {
+          if (attempt < 2) {
+            progress('SSL: waiting for DNS propagation, retrying...');
+            await new Promise(r => setTimeout(r, 15000));
+          } else {
+            logger.warn('SSL certificate failed for subdomain', { fullDomain, error: err.message });
+          }
+        }
       }
 
       // Save to database
@@ -683,6 +700,51 @@ class VPSManager {
         action: 'renew_ssl',
         resource_type: 'domain',
         resource_id: domainRow.domain,
+        success: true,
+      });
+
+      ssh.disconnect();
+      return { success: true, expiry: sslResult.expiry };
+    } catch (error) {
+      ssh.disconnect();
+      throw error;
+    }
+  }
+
+  /**
+   * Renew/obtain SSL for a subdomain.
+   */
+  async renewSubdomainSSL(subdomainId, userTelegramId) {
+    const subdomainRow = this.db.getSubdomain(subdomainId);
+    if (!subdomainRow) throw new Error('Subdomain not found');
+
+    const domainRow = this.db.getDomain(subdomainRow.domain_id);
+    if (!domainRow) throw new Error('Parent domain not found');
+
+    const vps = this.db.getVPS(domainRow.vps_id);
+    const ssh = new SSHManager(vps);
+    const ssl = new SSLManager(ssh);
+
+    try {
+      await ssh.connect();
+
+      const sslResult = await ssl.obtainCertificate(
+        subdomainRow.full_domain,
+        this.config.ssl.adminEmail,
+        true,
+        this.config.ssl.staging
+      );
+
+      this.db.updateSubdomain(subdomainId, {
+        ssl_status: sslResult.success ? 'active' : 'pending',
+        ssl_expiry: sslResult.expiry,
+      });
+
+      this.db.logActivity({
+        user_telegram_id: userTelegramId,
+        action: 'renew_ssl',
+        resource_type: 'subdomain',
+        resource_id: subdomainRow.full_domain,
         success: true,
       });
 

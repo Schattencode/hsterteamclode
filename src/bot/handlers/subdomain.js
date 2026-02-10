@@ -134,6 +134,54 @@ function registerSubdomainHandlers(bot, db, auth, activityLogger, vpsManager, co
   });
 
   // ────────────────────────────────────────────
+  // Renew SSL for subdomain
+  // ────────────────────────────────────────────
+  bot.on('callback_query', async (query) => {
+    const match = query.data.match(/^subdomain_renew_ssl_(\d+)$/);
+    if (!match) return;
+
+    const subdomainId = parseInt(match[1], 10);
+    const chatId = query.message.chat.id;
+
+    await bot.answerCallbackQuery(query.id);
+
+    const subdomain = db.getSubdomain(subdomainId);
+    if (!subdomain) return;
+
+    const access = await auth.checkDomainOwnership(query, subdomain.domain_id);
+    if (!access.allowed) return;
+
+    await bot.editMessageText(
+      `🔐 Obtaining SSL certificate for ${subdomain.full_domain}...`,
+      { chat_id: chatId, message_id: query.message.message_id }
+    );
+
+    try {
+      const result = await vpsManager.renewSubdomainSSL(subdomainId, String(query.from.id));
+      const expiryText = result.expiry ? `\nExpiry: ${result.expiry}` : '';
+      await bot.editMessageText(
+        `✅ SSL certificate active for <b>${subdomain.full_domain}</b>!${expiryText}\n\n🔒 https://${subdomain.full_domain}`,
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          parse_mode: 'HTML',
+          ...menus.subdomainManage(subdomainId, subdomain.domain_id),
+        }
+      );
+    } catch (err) {
+      const shortErr = err.message.length > 300 ? err.message.slice(0, 300) + '...' : err.message;
+      await bot.editMessageText(
+        `❌ Failed to obtain SSL: ${shortErr}`,
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          ...menus.subdomainManage(subdomainId, subdomain.domain_id),
+        }
+      );
+    }
+  });
+
+  // ────────────────────────────────────────────
   // Delete subdomain — confirmation
   // ────────────────────────────────────────────
   bot.on('callback_query', async (query) => {

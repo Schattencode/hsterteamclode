@@ -81,6 +81,7 @@ function subdomainManage(subdomainId, domainId) {
     reply_markup: {
       inline_keyboard: [
         [{ text: '🔄 Update Site Files', callback_data: `subdomain_update_${subdomainId}` }],
+        [{ text: '🔐 Renew SSL Certificate', callback_data: `subdomain_renew_ssl_${subdomainId}` }],
         [{ text: '🗑️ Delete Subdomain', callback_data: `subdomain_delete_${subdomainId}` }],
         [{ text: '⬅️ Back to Domain', callback_data: `domain_manage_${domainId}` }],
       ],
