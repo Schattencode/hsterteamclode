@@ -643,9 +643,19 @@ class VPSManager {
 
     try {
       await ssh.connect();
-      await ssl.renewCertificate(domainRow.domain);
 
-      this.db.updateDomain(domainId, { ssl_status: 'active' });
+      // Use obtainCertificate which handles both new and existing certs
+      const sslResult = await ssl.obtainCertificate(
+        domainRow.domain,
+        this.config.ssl.adminEmail,
+        false,
+        this.config.ssl.staging
+      );
+
+      this.db.updateDomain(domainId, {
+        ssl_status: sslResult.success ? 'active' : 'pending',
+        ssl_expiry: sslResult.expiry,
+      });
 
       this.db.logActivity({
         user_telegram_id: userTelegramId,
@@ -656,7 +666,7 @@ class VPSManager {
       });
 
       ssh.disconnect();
-      return { success: true };
+      return { success: true, expiry: sslResult.expiry };
     } catch (error) {
       ssh.disconnect();
       throw error;

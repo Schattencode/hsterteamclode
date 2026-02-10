@@ -452,9 +452,10 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     );
 
     try {
-      await vpsManager.renewSSL(domainId, String(query.from.id));
+      const result = await vpsManager.renewSSL(domainId, String(query.from.id));
+      const expiryText = result.expiry ? `\nExpiry: ${result.expiry}` : '';
       await bot.editMessageText(
-        `✅ SSL certificate renewed for <b>${domain.domain}</b>!`,
+        `✅ SSL certificate active for <b>${domain.domain}</b>!${expiryText}\n\n🔒 https://${domain.domain}`,
         {
           chat_id: chatId,
           message_id: query.message.message_id,
@@ -463,8 +464,9 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
         }
       );
     } catch (err) {
+      const shortErr = err.message.length > 300 ? err.message.slice(0, 300) + '...' : err.message;
       await bot.editMessageText(
-        `❌ Failed to renew SSL: ${err.message}`,
+        `❌ Failed to obtain SSL: ${shortErr}`,
         {
           chat_id: chatId,
           message_id: query.message.message_id,
