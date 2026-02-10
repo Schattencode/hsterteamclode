@@ -405,8 +405,12 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     const vps = db.getVPS(state.vpsId);
 
     await bot.editMessageText(
-      `📦 Installing PowerDNS on ${vps.name}...\n\nThis may take a few minutes...`,
-      { chat_id: chatId, message_id: query.message.message_id }
+      `📦 <b>Installing on ${vps.name}...</b>\n\n` +
+      `1. Freeing port 53 (systemd-resolved)\n` +
+      `2. Installing Nginx\n` +
+      `3. Installing PowerDNS\n\n` +
+      `⏳ This may take 2-5 minutes...`,
+      { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'HTML' }
     );
 
     try {

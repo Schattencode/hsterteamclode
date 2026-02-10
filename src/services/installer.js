@@ -12,6 +12,25 @@ class PowerDNSInstaller {
    */
   async install() {
     try {
+      // Free port 53: stop and disable systemd-resolved (occupies port 53 on modern Ubuntu/Debian)
+      try {
+        await this.ssh.exec('systemctl stop systemd-resolved');
+        await this.ssh.exec('systemctl disable systemd-resolved');
+        logger.info('systemd-resolved stopped and disabled');
+      } catch {
+        // systemd-resolved may not be present on all systems
+      }
+
+      // Set up manual DNS resolution (since systemd-resolved is now disabled)
+      try {
+        // Remove symlink if /etc/resolv.conf points to systemd stub
+        await this.ssh.exec('rm -f /etc/resolv.conf');
+        await this.ssh.exec(`cat > /etc/resolv.conf << 'EOF'\nnameserver 8.8.8.8\nnameserver 1.1.1.1\nnameserver 8.8.4.4\nEOF`);
+        logger.info('Manual /etc/resolv.conf configured');
+      } catch (e) {
+        logger.warn('Could not update resolv.conf', { error: e.message });
+      }
+
       // Update package lists
       await this.ssh.exec('apt-get update', 120000);
 
