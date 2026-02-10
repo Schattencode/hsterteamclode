@@ -57,17 +57,17 @@ function registerStartHandlers(bot, db, auth, activityLogger) {
     activityLogger.logCommand(msg, 'help');
 
     const helpText =
-      `📖 *Hosting Management Bot — Help*\n\n` +
-      `*Commands:*\n` +
+      `📖 <b>Hosting Management Bot — Help</b>\n\n` +
+      `<b>Commands:</b>\n` +
       `/start — Main menu\n` +
       `/help — This help message\n\n` +
-      `*Features:*\n` +
+      `<b>Features:</b>\n` +
       `🌐 Host ANY domain with separate files\n` +
       `📂 Create unlimited subdomains (each with own files)\n` +
       `🔒 Automatic SSL certificates\n` +
       `📦 Upload ZIP archives for deployment\n` +
       `👥 Team management with roles\n\n` +
-      `*How it works:*\n` +
+      `<b>How it works:</b>\n` +
       `1. Add a VPS server (admin)\n` +
       `2. Add a domain\n` +
       `3. Update nameservers at your registrar\n` +
@@ -80,7 +80,7 @@ function registerStartHandlers(bot, db, auth, activityLogger) {
       `• Completely independent files`;
 
     return bot.sendMessage(chatId, helpText, {
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       ...menus.backToMain(),
     });
   });
@@ -104,7 +104,7 @@ function registerStartHandlers(bot, db, auth, activityLogger) {
     const vpsList = db.getActiveVPS();
 
     const text =
-      `🏠 *Main Menu*\n\n` +
+      `🏠 <b>Main Menu</b>\n\n` +
       `📊 Quick Stats:\n` +
       `🌐 Domains: ${domainCount}\n` +
       `📂 Subdomains: ${subdomainCount}\n` +
@@ -113,7 +113,7 @@ function registerStartHandlers(bot, db, auth, activityLogger) {
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       ...menus.mainMenu(isAdmin),
     });
   });
@@ -126,16 +126,16 @@ function registerStartHandlers(bot, db, auth, activityLogger) {
     const chatId = query.message.chat.id;
 
     const helpText =
-      `📖 *Help*\n\n` +
-      `🌐 *Add Domain* — Host any domain\n` +
-      `📂 *Manage Domains* — View and manage all hosted domains\n` +
-      `⚙️ *Admin Panel* — VPS & team management (admin only)\n\n` +
+      `📖 <b>Help</b>\n\n` +
+      `🌐 <b>Add Domain</b> — Host any domain\n` +
+      `📂 <b>Manage Domains</b> — View and manage all hosted domains\n` +
+      `⚙️ <b>Admin Panel</b> — VPS & team management (admin only)\n\n` +
       `Each domain/subdomain is fully independent with its own files, Nginx config, and SSL certificate.`;
 
     await bot.editMessageText(helpText, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       ...menus.backToMain(),
     });
   });

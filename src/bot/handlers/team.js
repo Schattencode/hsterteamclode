@@ -19,11 +19,11 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
     await bot.answerCallbackQuery(query.id);
 
     await bot.editMessageText(
-      `👥 *Team Management*\n\nManage team members and their access.`,
+      `👥 <b>Team Management</b>\n\nManage team members and their access.`,
       {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         ...menus.adminTeam(),
       }
     );
@@ -44,7 +44,7 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
     bot._userStates[query.from.id] = { step: 'team_enter_id' };
 
     await bot.editMessageText(
-      `👥 *ADD TEAM MEMBER*\n\n` +
+      `👥 <b>ADD TEAM MEMBER</b>\n\n` +
       `Please provide the user's Telegram User ID.\n\n` +
       `How to find User ID:\n` +
       `• Ask user to message @userinfobot\n` +
@@ -53,7 +53,7 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
       {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         ...menus.cancelButton(),
       }
     );
@@ -74,11 +74,11 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
 
     if (users.length === 0) {
       return bot.editMessageText(
-        `👥 *Team Members*\n\nNo team members yet.`,
+        `👥 <b>Team Members</b>\n\nNo team members yet.`,
         {
           chat_id: chatId,
           message_id: query.message.message_id,
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
           ...menus.adminTeam(),
         }
       );
@@ -87,7 +87,7 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
     const admins = users.filter(u => u.role === 'admin');
     const members = users.filter(u => u.role === 'member');
 
-    let text = `👥 *TEAM MEMBERS* (${users.length})\n\n`;
+    let text = `👥 <b>TEAM MEMBERS</b> (${users.length})\n\n`;
 
     if (admins.length > 0) {
       text += `━━━ 👑 ADMINS (${admins.length}) ━━━\n\n`;
@@ -95,8 +95,8 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
         const name = u.username ? `@${u.username}` : (u.first_name || 'Unknown');
         const domains = db.getUserDomainCount(u.telegram_id);
         const lastActive = u.last_active || 'Never';
-        text += `👑 *${name}*\n`;
-        text += `   🆔 ID: \`${u.telegram_id}\`\n`;
+        text += `👑 <b>${name}</b>\n`;
+        text += `   🆔 ID: <code>${u.telegram_id}</code>\n`;
         text += `   📊 Domains: ${domains}\n`;
         text += `   ⏰ Last active: ${lastActive}\n\n`;
       }
@@ -108,8 +108,8 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
         const name = u.username ? `@${u.username}` : (u.first_name || 'Unknown');
         const domains = db.getUserDomainCount(u.telegram_id);
         const lastActive = u.last_active || 'Never';
-        text += `👤 *${name}*\n`;
-        text += `   🆔 ID: \`${u.telegram_id}\`\n`;
+        text += `👤 <b>${name}</b>\n`;
+        text += `   🆔 ID: <code>${u.telegram_id}</code>\n`;
         text += `   📊 Domains: ${domains}\n`;
         text += `   ⏰ Last active: ${lastActive}\n\n`;
       }
@@ -132,7 +132,7 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       reply_markup: { inline_keyboard: keyboard },
     });
   });
@@ -165,9 +165,9 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
     const roleIcon = user.role === 'admin' ? '👑' : '👤';
 
     const text =
-      `🔧 *Team Member: ${name}*\n\n` +
+      `🔧 <b>Team Member: ${name}</b>\n\n` +
       `${roleIcon} Role: ${user.role}\n` +
-      `🆔 ID: \`${user.telegram_id}\`\n` +
+      `🆔 ID: <code>${user.telegram_id}</code>\n` +
       `📊 Domains: ${domains}\n` +
       `📅 Joined: ${user.created_at}\n` +
       `⏰ Last active: ${user.last_active || 'Never'}`;
@@ -175,7 +175,7 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       ...menus.teamMemberActions(targetId, user.role),
     });
   });
@@ -209,19 +209,19 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
     // Notify the promoted user
     try {
       await bot.sendMessage(targetId,
-        `👑 *Role Updated*\n\nYou have been promoted to *Admin* by the team administrator.\n\nYou now have full access to all bot features.`,
-        { parse_mode: 'Markdown' }
+        `👑 <b>Role Updated</b>\n\nYou have been promoted to <b>Admin</b> by the team administrator.\n\nYou now have full access to all bot features.`,
+        { parse_mode: 'HTML' }
       );
     } catch {
       // User may not have started the bot yet
     }
 
     await bot.editMessageText(
-      `✅ ${name} has been promoted to *Admin*.`,
+      `✅ ${name} has been promoted to <b>Admin</b>.`,
       {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [
             [{ text: '📋 Team List', callback_data: 'team_list' }],
@@ -268,19 +268,19 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
 
     try {
       await bot.sendMessage(targetId,
-        `👤 *Role Updated*\n\nYour role has been changed to *Member*.`,
-        { parse_mode: 'Markdown' }
+        `👤 <b>Role Updated</b>\n\nYour role has been changed to <b>Member</b>.`,
+        { parse_mode: 'HTML' }
       );
     } catch {
       // User may not have started the bot
     }
 
     await bot.editMessageText(
-      `✅ ${name} has been demoted to *Member*.`,
+      `✅ ${name} has been demoted to <b>Member</b>.`,
       {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [
             [{ text: '📋 Team List', callback_data: 'team_list' }],
@@ -318,13 +318,13 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
     const name = user.username ? `@${user.username}` : (user.first_name || targetId);
 
     await bot.editMessageText(
-      `⚠️ *Remove Team Member*\n\n` +
-      `Remove *${name}* from the team?\n\n` +
+      `⚠️ <b>Remove Team Member</b>\n\n` +
+      `Remove <b>${name}</b> from the team?\n\n` +
       `They will lose access to the bot but their domains will remain.`,
       {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [
             [{ text: '⚠️ Yes, Remove', callback_data: `team_confirm_remove_${targetId}` }],
@@ -361,8 +361,8 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
 
     try {
       await bot.sendMessage(targetId,
-        `🚫 *Access Revoked*\n\nYour access to the Hosting Management Bot has been removed.\n\nContact an administrator if you believe this is an error.`,
-        { parse_mode: 'Markdown' }
+        `🚫 <b>Access Revoked</b>\n\nYour access to the Hosting Management Bot has been removed.\n\nContact an administrator if you believe this is an error.`,
+        { parse_mode: 'HTML' }
       );
     } catch {
       // User may not have started the bot
@@ -373,7 +373,7 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
       {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [
             [{ text: '📋 Team List', callback_data: 'team_list' }],
@@ -442,9 +442,9 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
     // Notify new user
     try {
       await bot.sendMessage(targetId,
-        `🎉 *Welcome to Hosting Management Bot!*\n\n` +
+        `🎉 <b>Welcome to Hosting Management Bot!</b>\n\n` +
         `You've been granted access.\n\n` +
-        `Your role: ${roleIcon} *${role.charAt(0).toUpperCase() + role.slice(1)}*\n\n` +
+        `Your role: ${roleIcon} <b>${role.charAt(0).toUpperCase() + role.slice(1)}</b>\n\n` +
         `You can now:\n` +
         `━━━━━━━━━━━━━━━━━━━━━━\n` +
         `✅ Add new domains\n` +
@@ -454,21 +454,21 @@ function registerTeamHandlers(bot, db, auth, activityLogger) {
         `✅ Obtain SSL certificates\n` +
         `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
         `Type /start to get started!`,
-        { parse_mode: 'Markdown' }
+        { parse_mode: 'HTML' }
       );
     } catch {
       // User may not have started the bot
     }
 
     await bot.editMessageText(
-      `✅ *TEAM MEMBER ADDED*\n\n` +
-      `🆔 User ID: \`${targetId}\`\n` +
+      `✅ <b>TEAM MEMBER ADDED</b>\n\n` +
+      `🆔 User ID: <code>${targetId}</code>\n` +
       `${roleIcon} Role: ${role}\n\n` +
       `The user has been notified (if they've started the bot).`,
       {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [
             [{ text: '➕ Add Another', callback_data: 'team_add' }],

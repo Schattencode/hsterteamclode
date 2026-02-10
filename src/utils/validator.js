@@ -107,6 +107,15 @@ class Validator {
     name = name.trim();
     return name.length >= 1 && name.length <= 100;
   }
+
+  /**
+   * Escape Telegram MarkdownV1 special characters in user-provided text.
+   * Characters: _ * ` [
+   */
+  static escMd(text) {
+    if (!text) return '';
+    return String(text).replace(/([_*`\[])/g, '\\$1');
+  }
 }
 
 module.exports = Validator;

@@ -31,7 +31,7 @@ function registerSubdomainHandlers(bot, db, auth, activityLogger, vpsManager, co
     };
 
     await bot.editMessageText(
-      `➕ *New Subdomain for ${domain.domain}*\n\n` +
+      `➕ <b>New Subdomain for ${domain.domain}</b>\n\n` +
       `Please enter the subdomain name:\n\n` +
       `✅ Valid examples:\n` +
       `• app\n` +
@@ -46,7 +46,7 @@ function registerSubdomainHandlers(bot, db, auth, activityLogger, vpsManager, co
       {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         ...menus.cancelButton(),
       }
     );
@@ -79,8 +79,8 @@ function registerSubdomainHandlers(bot, db, auth, activityLogger, vpsManager, co
     const sslIcon = subdomain.ssl_status === 'active' ? '✅ Active' : '⚠️ ' + subdomain.ssl_status;
 
     const text =
-      `🔧 *SUBDOMAIN: ${subdomain.full_domain}*\n\n` +
-      `📁 Path: \`${subdomain.site_path || 'N/A'}\`\n` +
+      `🔧 <b>SUBDOMAIN: ${subdomain.full_domain}</b>\n\n` +
+      `📁 Path: <code>${subdomain.site_path || 'N/A'}</code>\n` +
       `🔒 SSL: ${sslIcon}\n` +
       `📊 Status: ${subdomain.status === 'active' ? '🟢 Online' : '🔴 ' + subdomain.status}\n` +
       `⏰ Created: ${subdomain.created_at}`;
@@ -88,7 +88,7 @@ function registerSubdomainHandlers(bot, db, auth, activityLogger, vpsManager, co
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       ...menus.subdomainManage(subdomainId, subdomain.domain_id),
     });
   });
@@ -119,15 +119,15 @@ function registerSubdomainHandlers(bot, db, auth, activityLogger, vpsManager, co
     };
 
     await bot.editMessageText(
-      `🔄 *Update Site Files: ${subdomain.full_domain}*\n\n` +
+      `🔄 <b>Update Site Files: ${subdomain.full_domain}</b>\n\n` +
       `Please send a new ZIP archive.\n\n` +
       `⚠️ This will REPLACE all existing files in:\n` +
-      `\`${subdomain.site_path}\`\n\n` +
+      `<code>${subdomain.site_path}</code>\n\n` +
       `Maximum size: ${config.upload.maxSizeMB} MB`,
       {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         ...menus.cancelButton(),
       }
     );
@@ -152,9 +152,9 @@ function registerSubdomainHandlers(bot, db, auth, activityLogger, vpsManager, co
     if (!access.allowed) return;
 
     const text =
-      `⚠️ *DELETE SUBDOMAIN*\n\n` +
+      `⚠️ <b>DELETE SUBDOMAIN</b>\n\n` +
       `You are about to delete:\n` +
-      `🌐 *${subdomain.full_domain}*\n\n` +
+      `🌐 <b>${subdomain.full_domain}</b>\n\n` +
       `This will PERMANENTLY remove:\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n` +
       `🗑️ All website files\n` +
@@ -167,7 +167,7 @@ function registerSubdomainHandlers(bot, db, auth, activityLogger, vpsManager, co
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       ...menus.confirmDelete('subdomain', subdomainId),
     });
   });
@@ -200,7 +200,7 @@ function registerSubdomainHandlers(bot, db, auth, activityLogger, vpsManager, co
         steps.push(step);
       });
 
-      let report = `✅ *SUBDOMAIN DELETED*\n\n`;
+      let report = `✅ <b>SUBDOMAIN DELETED</b>\n\n`;
       report += `${subdomain.full_domain} has been completely removed.\n\n`;
       report += `Progress:\n`;
       report += steps.map(s => `[✓] ${s}`).join('\n');
@@ -208,7 +208,7 @@ function registerSubdomainHandlers(bot, db, auth, activityLogger, vpsManager, co
       await bot.editMessageText(report, {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [
             [{ text: '📋 Manage Domain', callback_data: `domain_manage_${subdomain.domain_id}` }],

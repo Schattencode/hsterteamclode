@@ -27,7 +27,7 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     const admins = users.filter(u => u.role === 'admin');
     const members = users.filter(u => u.role === 'member');
 
-    let text = `⚙️ *ADMIN PANEL*\n\n`;
+    let text = `⚙️ <b>ADMIN PANEL</b>\n\n`;
     text += `━━━ 🖥️ VPS ━━━\n`;
     text += `Total: ${vpsList.length} | Active: ${vpsList.filter(v => v.status === 'active').length}\n\n`;
     text += `━━━ 👥 TEAM ━━━\n`;
@@ -41,7 +41,7 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       ...menus.adminPanel(),
     });
   });
@@ -58,11 +58,11 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     await bot.answerCallbackQuery(query.id);
 
     await bot.editMessageText(
-      `🖥️ *VPS Management*\n\nManage your VPS servers.`,
+      `🖥️ <b>VPS Management</b>\n\nManage your VPS servers.`,
       {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         ...menus.adminVPS(),
       }
     );
@@ -83,13 +83,13 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     bot._userStates[query.from.id] = { step: 'vps_enter_name' };
 
     await bot.editMessageText(
-      `📝 *VPS Setup — Step 1/4*\n\n` +
+      `📝 <b>VPS Setup — Step 1/4</b>\n\n` +
       `Please enter a name for this VPS:\n` +
       `Example: Main Server, Production, Staging`,
       {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         ...menus.cancelButton(),
       }
     );
@@ -110,11 +110,11 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
 
     if (vpsList.length === 0) {
       return bot.editMessageText(
-        `🖥️ *VPS Servers*\n\nNo VPS servers configured.`,
+        `🖥️ <b>VPS Servers</b>\n\nNo VPS servers configured.`,
         {
           chat_id: chatId,
           message_id: query.message.message_id,
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [
               [{ text: '➕ Add VPS', callback_data: 'vps_add' }],
@@ -125,7 +125,7 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
       );
     }
 
-    let text = `🖥️ *VPS SERVERS* (${vpsList.length})\n\n`;
+    let text = `🖥️ <b>VPS SERVERS</b> (${vpsList.length})\n\n`;
     const keyboard = [];
 
     for (const vps of vpsList) {
@@ -134,7 +134,7 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
       const dnsIcon = vps.dns_configured ? '✅' : '❌';
 
       text += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-      text += `*${vps.name}*\n`;
+      text += `<b>${vps.name}</b>\n`;
       text += `🌐 IP: ${vps.ip}\n`;
       text += `📊 Status: ${statusIcon} ${vps.status}\n`;
       text += `🌍 DNS: ${dnsIcon}\n`;
@@ -151,7 +151,7 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       reply_markup: { inline_keyboard: keyboard },
     });
   });
@@ -182,7 +182,7 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     const domainCount = db.getVPSDomainCount(vpsId);
 
     const text =
-      `🖥️ *VPS: ${vps.name}*\n\n` +
+      `🖥️ <b>VPS: ${vps.name}</b>\n\n` +
       `🌐 IP: ${vps.ip}\n` +
       `👤 SSH User: ${vps.ssh_user}\n` +
       `🔑 SSH Port: ${vps.ssh_port}\n` +
@@ -194,7 +194,7 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       ...menus.vpsManage(vpsId),
     });
   });
@@ -218,11 +218,11 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
 
     if (domains.length === 0) {
       return bot.editMessageText(
-        `📋 *Domains on ${vps.name}*\n\nNo domains hosted on this VPS.`,
+        `📋 <b>Domains on ${vps.name}</b>\n\nNo domains hosted on this VPS.`,
         {
           chat_id: chatId,
           message_id: query.message.message_id,
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [
               [{ text: '⬅️ Back', callback_data: `vps_manage_${vpsId}` }],
@@ -232,7 +232,7 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
       );
     }
 
-    let text = `📋 *Domains on ${vps.name}* (${domains.length})\n\n`;
+    let text = `📋 <b>Domains on ${vps.name}</b> (${domains.length})\n\n`;
     const keyboard = [];
 
     for (const d of domains) {
@@ -247,7 +247,7 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       reply_markup: { inline_keyboard: keyboard },
     });
   });
@@ -271,25 +271,25 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
 
     if (domainCount > 0) {
       return bot.editMessageText(
-        `❌ Cannot remove VPS *${vps.name}*.\n\n` +
+        `❌ Cannot remove VPS <b>${vps.name}</b>.\n\n` +
         `It still has ${domainCount} domain(s) hosted. Remove all domains first.`,
         {
           chat_id: chatId,
           message_id: query.message.message_id,
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
           ...menus.vpsManage(vpsId),
         }
       );
     }
 
     await bot.editMessageText(
-      `⚠️ *DELETE VPS*\n\n` +
-      `Remove *${vps.name}* (${vps.ip}) from bot?\n\n` +
+      `⚠️ <b>DELETE VPS</b>\n\n` +
+      `Remove <b>${vps.name}</b> (${vps.ip}) from bot?\n\n` +
       `This only removes the VPS record from the bot.\nThe actual server will not be affected.`,
       {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         ...menus.confirmDelete('vps', vpsId),
       }
     );
@@ -318,11 +318,11 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     });
 
     await bot.editMessageText(
-      `✅ VPS *${vps.name}* has been removed.`,
+      `✅ VPS <b>${vps.name}</b> has been removed.`,
       {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         ...menus.adminVPS(),
       }
     );
@@ -374,19 +374,19 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
       delete bot._userStates[userId];
 
       const text =
-        `✅ *VPS SETUP COMPLETE!*\n\n` +
+        `✅ <b>VPS SETUP COMPLETE!</b>\n\n` +
         `🖥️ VPS: ${vps.name}\n` +
         `🌐 IP: ${vps.ip}\n` +
         `🔐 SSH: Connected\n` +
         `🌍 DNS: Active\n\n` +
         `Your nameservers:\n` +
-        `NS1: \`${config.dns.ns1}\` (${vps.ip})\n` +
-        `NS2: \`${config.dns.ns2}\` (${vps.ip})`;
+        `NS1: <code>${config.dns.ns1}</code> (${vps.ip})\n` +
+        `NS2: <code>${config.dns.ns2}</code> (${vps.ip})`;
 
       await bot.editMessageText(text, {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         ...menus.afterVPSSetup(state.vpsId),
       });
     } catch (err) {
@@ -418,7 +418,7 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     delete bot._userStates[userId];
 
     const text =
-      `✅ *VPS Added!*\n\n` +
+      `✅ <b>VPS Added!</b>\n\n` +
       `🖥️ VPS: ${vps.name}\n` +
       `🌐 IP: ${vps.ip}\n` +
       `🔐 SSH: Connected\n` +
@@ -428,7 +428,7 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       ...menus.afterVPSSetup(state.vpsId),
     });
   });
@@ -447,7 +447,7 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     const stats = db.getStats();
 
     const text =
-      `📊 *DETAILED STATISTICS*\n\n` +
+      `📊 <b>DETAILED STATISTICS</b>\n\n` +
       `━━━ Infrastructure ━━━\n` +
       `🖥️ VPS Servers: ${stats.vps}\n` +
       `🌐 Domains: ${stats.domains}\n` +
@@ -461,7 +461,7 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
           [{ text: '⬅️ Back', callback_data: 'admin_panel' }],
@@ -485,11 +485,11 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
 
     if (logs.length === 0) {
       return bot.editMessageText(
-        `📜 *Activity Logs*\n\nNo activity recorded yet.`,
+        `📜 <b>Activity Logs</b>\n\nNo activity recorded yet.`,
         {
           chat_id: chatId,
           message_id: query.message.message_id,
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [[{ text: '⬅️ Back', callback_data: 'admin_panel' }]],
           },
@@ -497,12 +497,12 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
       );
     }
 
-    let text = `📜 *ACTIVITY LOGS* (last 20)\n\n`;
+    let text = `📜 <b>ACTIVITY LOGS</b> (last 20)\n\n`;
 
     for (const log of logs) {
       const icon = log.success ? '✅' : '❌';
       const time = log.created_at.split(' ').pop() || log.created_at;
-      text += `${icon} \`${log.action}\`\n`;
+      text += `${icon} <code>${log.action}</code>\n`;
       text += `   👤 ${log.user_telegram_id} | ${time}\n`;
       if (log.resource_id) text += `   📍 ${log.resource_id}\n`;
       if (log.error_message) text += `   ⚠️ ${log.error_message}\n`;
@@ -512,7 +512,7 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [[{ text: '⬅️ Back', callback_data: 'admin_panel' }]],
       },

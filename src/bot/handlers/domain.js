@@ -26,11 +26,11 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
 
     if (domains.length === 0) {
       return bot.editMessageText(
-        '📋 *Your Domains*\n\nNo domains configured yet.',
+        '📋 <b>Your Domains</b>\n\nNo domains configured yet.',
         {
           chat_id: chatId,
           message_id: query.message.message_id,
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [
               [{ text: '➕ Add New Domain', callback_data: 'domain_add' }],
@@ -41,7 +41,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
       );
     }
 
-    let text = `📋 *YOUR DOMAINS*\n\nTotal: ${domains.length} domains\n`;
+    let text = `📋 <b>YOUR DOMAINS</b>\n\nTotal: ${domains.length} domains\n`;
 
     const keyboard = [];
     for (const d of domains) {
@@ -50,7 +50,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
       const statusIcon = d.status === 'active' ? '🟢' : '🔴';
 
       text += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
-      text += `🌐 *${d.domain}*\n`;
+      text += `🌐 <b>${d.domain}</b>\n`;
       text += `🔒 SSL: ${sslIcon} | ${statusIcon} ${d.status}\n`;
       text += `📂 Subdomains: ${subs.length}`;
       if (subs.length > 0) {
@@ -68,7 +68,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       reply_markup: { inline_keyboard: keyboard },
     });
   });
@@ -101,11 +101,11 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     const subs = db.getSubdomainsByDomain(domainId);
     const vps = db.getVPS(domain.vps_id);
 
-    let text = `📋 *DOMAIN: ${domain.domain}*\n\n`;
+    let text = `📋 <b>DOMAIN: ${domain.domain}</b>\n\n`;
     text += `━━━ 📊 OVERVIEW ━━━\n\n`;
     text += `🌐 Domain: ${domain.domain}\n`;
     text += `🖥️ VPS: ${vps ? vps.name : 'Unknown'} (${vps ? vps.ip : 'N/A'})\n`;
-    text += `📁 Path: \`${domain.site_path || 'Not deployed'}\`\n`;
+    text += `📁 Path: <code>${domain.site_path || 'Not deployed'}</code>\n`;
     text += `🔒 SSL: ${domain.ssl_status === 'active' ? '✅ Active' : '⚠️ ' + domain.ssl_status}\n`;
     if (domain.ssl_expiry) text += `📅 SSL Expiry: ${domain.ssl_expiry}\n`;
     text += `📊 Status: ${domain.status === 'active' ? '🟢 Online' : '🔴 ' + domain.status}\n`;
@@ -122,7 +122,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       ...menus.domainManage(domainId),
     });
   });
@@ -146,11 +146,11 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
 
     if (subs.length === 0) {
       return bot.editMessageText(
-        `📂 *Subdomains of ${domain.domain}*\n\nNo subdomains yet.`,
+        `📂 <b>Subdomains of ${domain.domain}</b>\n\nNo subdomains yet.`,
         {
           chat_id: chatId,
           message_id: query.message.message_id,
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [
               [{ text: '➕ Add Subdomain', callback_data: `subdomain_add_${domainId}` }],
@@ -161,12 +161,12 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
       );
     }
 
-    let text = `📂 *Subdomains of ${domain.domain}* (${subs.length})\n\n`;
+    let text = `📂 <b>Subdomains of ${domain.domain}</b> (${subs.length})\n\n`;
     const keyboard = [];
 
     for (const s of subs) {
       const sslIcon = s.ssl_status === 'active' ? '✅' : '⚠️';
-      text += `🌐 *${s.full_domain}*\n`;
+      text += `🌐 <b>${s.full_domain}</b>\n`;
       text += `📁 ${s.site_path || 'N/A'}\n`;
       text += `🔒 SSL: ${sslIcon} | 📊 ${s.status === 'active' ? '🟢' : '🔴'}\n\n`;
 
@@ -181,7 +181,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       reply_markup: { inline_keyboard: keyboard },
     });
   });
@@ -215,7 +215,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     bot._userStates[query.from.id] = { step: 'domain_enter_name' };
 
     await bot.editMessageText(
-      `🌐 *Domain Hosting Setup*\n\n` +
+      `🌐 <b>Domain Hosting Setup</b>\n\n` +
       `Please enter the domain name you want to host:\n\n` +
       `✅ Valid examples:\n` +
       `• example.com\n` +
@@ -228,7 +228,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
       {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         ...menus.cancelButton(),
       }
     );
@@ -272,14 +272,14 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
 
     const text =
       `✅ VPS: ${vps.name}\n\n` +
-      `📋 *NAMESERVER CONFIGURATION*\n\n` +
+      `📋 <b>NAMESERVER CONFIGURATION</b>\n\n` +
       `To activate your domain, update nameservers at your domain registrar:\n\n` +
-      `🌐 Domain: *${domain}*\n` +
+      `🌐 Domain: <b>${domain}</b>\n` +
       `📍 Registrar: (Namecheap, GoDaddy, Cloudflare, etc.)\n\n` +
       `Change nameservers to:\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `NS1: \`${config.dns.ns1}\`\n` +
-      `NS2: \`${config.dns.ns2}\`\n` +
+      `NS1: <code>${config.dns.ns1}</code>\n` +
+      `NS2: <code>${config.dns.ns2}</code>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
       `📖 How to change nameservers:\n` +
       `1. Login to your domain registrar\n` +
@@ -294,7 +294,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       ...menus.nsConfigured(),
     });
   });
@@ -332,16 +332,16 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
 
     let verifyText;
     if (nsResult.verified) {
-      verifyText = `✅ *NAMESERVERS VERIFIED!*\n\n${domain} now points to our DNS servers.`;
+      verifyText = `✅ <b>NAMESERVERS VERIFIED!</b>\n\n${domain} now points to our DNS servers.`;
       db.updateDomain(state.domainId, { ns_configured: 1 });
     } else {
       verifyText =
-        `⏳ *Nameservers not detected yet.*\n\n` +
+        `⏳ <b>Nameservers not detected yet.</b>\n\n` +
         `This is normal — DNS propagation can take up to 48 hours.\n\n` +
         `You can continue with the setup. Your site will be accessible once nameservers propagate.`;
     }
 
-    verifyText += `\n\n📦 *Website Upload*\n\n` +
+    verifyText += `\n\n📦 <b>Website Upload</b>\n\n` +
       `Please send a ZIP archive containing your website:\n\n` +
       `📋 Requirements:\n` +
       `• Must contain index.html or index.php\n` +
@@ -357,7 +357,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     await bot.editMessageText(verifyText, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       ...menus.cancelButton(),
     });
   });
@@ -386,15 +386,15 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     };
 
     await bot.editMessageText(
-      `🔄 *Update Site Files: ${domain.domain}*\n\n` +
+      `🔄 <b>Update Site Files: ${domain.domain}</b>\n\n` +
       `Please send a new ZIP archive.\n\n` +
       `⚠️ This will REPLACE all existing files in:\n` +
-      `\`${domain.site_path}\`\n\n` +
+      `<code>${domain.site_path}</code>\n\n` +
       `Maximum size: ${config.upload.maxSizeMB} MB`,
       {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         ...menus.cancelButton(),
       }
     );
@@ -424,11 +424,11 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     try {
       await vpsManager.renewSSL(domainId, String(query.from.id));
       await bot.editMessageText(
-        `✅ SSL certificate renewed for *${domain.domain}*!`,
+        `✅ SSL certificate renewed for <b>${domain.domain}</b>!`,
         {
           chat_id: chatId,
           message_id: query.message.message_id,
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
           ...menus.domainManage(domainId),
         }
       );
@@ -461,8 +461,8 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     const domain = db.getDomain(domainId);
     const subs = db.getSubdomainsByDomain(domainId);
 
-    let text = `⚠️ *DELETE DOMAIN*\n\n`;
-    text += `You are about to delete:\n🌐 *${domain.domain}*\n\n`;
+    let text = `⚠️ <b>DELETE DOMAIN</b>\n\n`;
+    text += `You are about to delete:\n🌐 <b>${domain.domain}</b>\n\n`;
     text += `This will PERMANENTLY remove:\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━━\n`;
     text += `🗑️ All website files\n`;
@@ -478,7 +478,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       ...menus.confirmDelete('domain', domainId),
     });
   });
@@ -510,7 +510,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
         steps.push(step);
       });
 
-      let report = `✅ *DOMAIN DELETED*\n\n`;
+      let report = `✅ <b>DOMAIN DELETED</b>\n\n`;
       report += `${domain.domain} has been completely removed.\n\n`;
       report += `Progress:\n`;
       report += steps.map(s => `[✓] ${s}`).join('\n');
@@ -518,7 +518,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
       await bot.editMessageText(report, {
         chat_id: chatId,
         message_id: query.message.message_id,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         ...menus.backToMain(),
       });
     } catch (err) {

@@ -55,6 +55,9 @@ function createBot(db, config) {
       return bot.sendMessage(chatId, access.reason);
     }
 
+    // Helper to escape Markdown special chars in user input
+    const esc = (t) => Validator.escMd(t);
+
     try {
       // ── VPS SETUP FLOW ──
 
@@ -65,8 +68,8 @@ function createBot(db, config) {
         state.vpsName = text;
         state.step = 'vps_enter_ip';
         return bot.sendMessage(chatId,
-          `✅ VPS Name: *${text}*\n\n📝 Step 2/4\nPlease enter the IP address of your VPS:\nExample: 123.45.67.89`,
-          { parse_mode: 'Markdown', ...menus.cancelButton() }
+          `✅ VPS Name: ${esc(text)}\n\n📝 Step 2/4\nPlease enter the IP address of your VPS:\nExample: 123.45.67.89`,
+          menus.cancelButton()
         );
       }
 
@@ -82,8 +85,8 @@ function createBot(db, config) {
         state.vpsIP = text;
         state.step = 'vps_enter_user';
         return bot.sendMessage(chatId,
-          `✅ IP Address: *${text}*\n\n📝 Step 3/4\nPlease enter SSH username (usually 'root'):`,
-          { parse_mode: 'Markdown', ...menus.cancelButton() }
+          `✅ IP Address: ${text}\n\n📝 Step 3/4\nPlease enter SSH username (usually 'root'):`,
+          menus.cancelButton()
         );
       }
 
@@ -91,8 +94,8 @@ function createBot(db, config) {
         state.vpsUser = text;
         state.step = 'vps_enter_key_path';
         return bot.sendMessage(chatId,
-          `✅ SSH User: *${text}*\n\n📝 Step 4/4\nPlease send the absolute path to your SSH private key on the bot's server:\n\nExample: /root/.ssh/id_rsa`,
-          { parse_mode: 'Markdown', ...menus.cancelButton() }
+          `✅ SSH User: ${esc(text)}\n\n📝 Step 4/4\nPlease send the absolute path to your SSH private key on the bot server:\n\nExample: /root/.ssh/id_rsa`,
+          menus.cancelButton()
         );
       }
 
@@ -174,8 +177,8 @@ function createBot(db, config) {
         const existing = db.getDomainByName(domain);
         if (existing) {
           return bot.sendMessage(chatId,
-            `❌ Domain *${domain}* is already registered in the system.`,
-            { parse_mode: 'Markdown', ...menus.cancelButton() }
+            `❌ Domain <b>${domain}</b> is already registered in the system.`,
+            { parse_mode: 'HTML', ...menus.cancelButton() }
           );
         }
 
@@ -204,13 +207,13 @@ function createBot(db, config) {
           state.vpsId = vps.id;
 
           return bot.sendMessage(chatId,
-            `✅ Domain: *${domain}*\n` +
+            `✅ Domain: <b>${domain}</b>\n` +
             `✅ VPS: ${vps.name}\n\n` +
-            `📋 *NAMESERVER CONFIGURATION*\n\n` +
+            `📋 <b>NAMESERVER CONFIGURATION</b>\n\n` +
             `Update nameservers at your registrar:\n\n` +
             `━━━━━━━━━━━━━━━━━━━━━━\n` +
-            `NS1: \`${config.dns.ns1}\`\n` +
-            `NS2: \`${config.dns.ns2}\`\n` +
+            `NS1: <code>${config.dns.ns1}</code>\n` +
+            `NS2: <code>${config.dns.ns2}</code>\n` +
             `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
             `📖 Steps:\n` +
             `1. Login to your domain registrar\n` +
@@ -219,19 +222,19 @@ function createBot(db, config) {
             `4. Enter the NS records above\n` +
             `5. Save changes\n\n` +
             `⏱️ Propagation: 5 min to 48 hours`,
-            { parse_mode: 'Markdown', ...menus.nsConfigured() }
+            { parse_mode: 'HTML', ...menus.nsConfigured() }
           );
         }
 
-        let vpsText = `✅ Domain: *${domain}*\n\nSelect VPS for hosting:\n\n`;
+        let vpsText = `✅ Domain: <b>${domain}</b>\n\nSelect VPS for hosting:\n\n`;
         for (let i = 0; i < vpsList.length; i++) {
           const vps = vpsList[i];
           const domainCount = db.getVPSDomainCount(vps.id);
-          vpsText += `${i + 1}️⃣ *${vps.name}* (${vps.ip})\n   Domains: ${domainCount} | Status: 🟢 Active\n\n`;
+          vpsText += `${i + 1}️⃣ <b>${vps.name}</b> (${vps.ip})\n   Domains: ${domainCount} | Status: 🟢 Active\n\n`;
         }
 
         return bot.sendMessage(chatId, vpsText, {
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
           ...menus.vpsSelectList(vpsList),
         });
       }
@@ -256,8 +259,8 @@ function createBot(db, config) {
         const existing = db.getSubdomainByFullDomain(fullDomain);
         if (existing) {
           return bot.sendMessage(chatId,
-            `❌ Subdomain *${fullDomain}* already exists.`,
-            { parse_mode: 'Markdown', ...menus.cancelButton() }
+            `❌ Subdomain <b>${fullDomain}</b> already exists.`,
+            { parse_mode: 'HTML', ...menus.cancelButton() }
           );
         }
 
@@ -266,15 +269,15 @@ function createBot(db, config) {
         state.step = 'subdomain_upload_zip';
 
         return bot.sendMessage(chatId,
-          `✅ Subdomain: *${fullDomain}*\n\n` +
+          `✅ Subdomain: <b>${fullDomain}</b>\n\n` +
           `This will create a NEW, SEPARATE website at:\nhttps://${fullDomain}\n\n` +
-          `📦 *Website Upload*\n\n` +
+          `📦 <b>Website Upload</b>\n\n` +
           `Please send a ZIP archive for this subdomain.\n\n` +
           `⚠️ IMPORTANT:\n` +
           `This is SEPARATE from ${state.parentDomain}\n` +
           `Each subdomain has its own files.\n\n` +
-          `Location: \`/var/www/${fullDomain}/\``,
-          { parse_mode: 'Markdown', ...menus.cancelButton() }
+          `Location: <code>/var/www/${fullDomain}/</code>`,
+          { parse_mode: 'HTML', ...menus.cancelButton() }
         );
       }
 
@@ -304,18 +307,18 @@ function createBot(db, config) {
         state.step = 'team_select_role';
 
         const text2 =
-          `✅ User ID: \`${telegramId}\`\n\n` +
+          `✅ User ID: <code>${telegramId}</code>\n\n` +
           `Select Role:\n\n` +
           `━━━━━━━━━━━━━━━━━━━━━━\n` +
-          `👤 *MEMBER*\n` +
+          `👤 <b>MEMBER</b>\n` +
           `Can: Add domains, manage own domains, create subdomains, upload sites\n` +
           `Cannot: Manage VPS, team, view logs, delete others' domains\n\n` +
           `━━━━━━━━━━━━━━━━━━━━━━\n` +
-          `👑 *ADMIN*\n` +
+          `👑 <b>ADMIN</b>\n` +
           `Full system access: VPS, team, logs, all domains`;
 
         return bot.sendMessage(chatId, text2, {
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
           ...menus.teamRoleSelect(telegramId),
         });
       }
@@ -388,11 +391,11 @@ function createBot(db, config) {
 
         delete bot._userStates[userId];
 
-        let report = `✅ *DEPLOYMENT SUCCESSFUL!*\n\n`;
+        let report = `✅ <b>DEPLOYMENT SUCCESSFUL!</b>\n\n`;
         report += `🎉 Your website is now LIVE!\n\n`;
-        report += `🌐 Domain: *${domain}*\n`;
+        report += `🌐 Domain: <b>${domain}</b>\n`;
         report += `🔒 HTTPS: ${result.sslActive ? '✅ Active' : '⚠️ Pending'}\n`;
-        report += `📁 Location: \`${result.site_path}\`\n`;
+        report += `📁 Location: <code>${result.site_path}</code>\n`;
         report += `📊 Files: ${result.fileCount} files, ${FileManager.formatSize(result.totalSize)}\n\n`;
         report += `🔗 Access your site:\n`;
         report += `• https://${domain}\n`;
@@ -401,7 +404,7 @@ function createBot(db, config) {
         report += steps.map(s => `[✓] ${s}`).join('\n');
 
         await bot.sendMessage(chatId, report, {
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
           ...menus.afterDomainDeploy(domainId),
         });
         return;
@@ -426,14 +429,14 @@ function createBot(db, config) {
 
         delete bot._userStates[userId];
 
-        let report = `✅ *FILES UPDATED*\n\n`;
-        report += `🌐 Domain: *${domain}*\n`;
+        let report = `✅ <b>FILES UPDATED</b>\n\n`;
+        report += `🌐 Domain: <b>${domain}</b>\n`;
         report += `📊 Files: ${result.fileCount} files, ${FileManager.formatSize(result.totalSize)}\n\n`;
         report += `Progress:\n`;
         report += steps.map(s => `[✓] ${s}`).join('\n');
 
         await bot.sendMessage(chatId, report, {
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
           ...menus.domainManage(domainId),
         });
         return;
@@ -465,17 +468,17 @@ function createBot(db, config) {
 
         delete bot._userStates[userId];
 
-        let report = `✅ *SUBDOMAIN DEPLOYED!*\n\n`;
-        report += `🌐 Subdomain: *${fullDomain}*\n`;
+        let report = `✅ <b>SUBDOMAIN DEPLOYED!</b>\n\n`;
+        report += `🌐 Subdomain: <b>${fullDomain}</b>\n`;
         report += `🔒 HTTPS: ${result.sslActive ? '✅ Active' : '⚠️ Pending'}\n`;
-        report += `📁 Location: \`${result.site_path}\`\n`;
+        report += `📁 Location: <code>${result.site_path}</code>\n`;
         report += `📊 Files: ${result.fileCount} files, ${FileManager.formatSize(result.totalSize)}\n\n`;
         report += `🔗 Access: https://${fullDomain}\n\n`;
         report += `Progress:\n`;
         report += steps.map(s => `[✓] ${s}`).join('\n');
 
         await bot.sendMessage(chatId, report, {
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [
               [{ text: '➕ Add Another Subdomain', callback_data: `subdomain_add_${domainId}` }],
@@ -508,14 +511,14 @@ function createBot(db, config) {
 
         const subdomain = db.getSubdomain(subdomainId);
 
-        let report = `✅ *FILES UPDATED*\n\n`;
-        report += `🌐 Subdomain: *${fullDomain}*\n`;
+        let report = `✅ <b>FILES UPDATED</b>\n\n`;
+        report += `🌐 Subdomain: <b>${fullDomain}</b>\n`;
         report += `📊 Files: ${result.fileCount} files, ${FileManager.formatSize(result.totalSize)}\n\n`;
         report += `Progress:\n`;
         report += steps.map(s => `[✓] ${s}`).join('\n');
 
         await bot.sendMessage(chatId, report, {
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
           ...menus.subdomainManage(subdomainId, subdomain ? subdomain.domain_id : null),
         });
         return;
