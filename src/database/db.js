@@ -151,13 +151,29 @@ class DB {
   }
 
   // ──────────────────────────────────────
+  // Settings Operations (key-value store)
+  // ──────────────────────────────────────
+
+  getSetting(key) {
+    const row = this._get('SELECT value FROM settings WHERE key = ?', [key]);
+    return row ? row.value : null;
+  }
+
+  setSetting(key, value) {
+    this._run(
+      `INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`,
+      [key, value]
+    );
+  }
+
+  // ──────────────────────────────────────
   // Domain Operations
   // ──────────────────────────────────────
 
-  createDomain({ domain, vps_id, ns1, ns2, created_by }) {
+  createDomain({ domain, vps_id, ns1, ns2, cloudflare_zone_id, created_by }) {
     const result = this._run(
-      `INSERT INTO domains (domain, vps_id, ns1, ns2, created_by) VALUES (?, ?, ?, ?, ?)`,
-      [domain, vps_id, ns1, ns2, created_by]
+      `INSERT INTO domains (domain, vps_id, ns1, ns2, cloudflare_zone_id, created_by) VALUES (?, ?, ?, ?, ?, ?)`,
+      [domain, vps_id, ns1 || null, ns2 || null, cloudflare_zone_id || null, created_by]
     );
     return this.getDomain(result.lastInsertRowid);
   }
@@ -184,7 +200,7 @@ class DB {
 
   updateDomain(id, fields) {
     const allowed = [
-      'domain', 'ns1', 'ns2', 'ns_configured', 'site_path',
+      'domain', 'ns1', 'ns2', 'cloudflare_zone_id', 'ns_configured', 'site_path',
       'nginx_config_path', 'ssl_status', 'ssl_expiry', 'status',
     ];
     const updates = [];

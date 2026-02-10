@@ -1,6 +1,6 @@
 const SSHManager = require('./ssh');
 const nginxConfig = require('./nginx');
-const PowerDNSManager = require('./dns');
+const CloudflareManager = require('./cloudflare');
 const SSLManager = require('./ssl');
 const FileManager = require('./fileManager');
 const path = require('path');
@@ -14,6 +14,17 @@ class VPSManager {
   }
 
   /**
+   * Get a CloudflareManager instance using the token stored in DB settings.
+   */
+  _getCloudflare() {
+    const token = this.db.getSetting('cloudflare_token');
+    if (!token) {
+      throw new Error('Cloudflare API token not configured. Admin must set it in Settings.');
+    }
+    return new CloudflareManager(token);
+  }
+
+  /**
    * Deploy a domain: upload files, configure Nginx, DNS, and SSL.
    */
   async deployDomain(domainData, zipFilePath, userTelegramId, progressCallback) {
@@ -23,7 +34,6 @@ class VPSManager {
     if (!vps) throw new Error('VPS not found');
 
     const ssh = new SSHManager(vps);
-    const dnsManager = new PowerDNSManager(this.config.dns.apiUrl, this.config.dns.apiKey);
     const ssl = new SSLManager(ssh);
     const fileManager = new FileManager(this.config.upload.tempDir);
 
@@ -70,18 +80,17 @@ class VPSManager {
       progress('Activating site configuration');
       await ssh.exec(`ln -sf ${configPath} ${enabledPath}`);
 
-      // Step 8: Create DNS records
-      progress('Creating DNS records');
+      // Step 8: Create DNS records via Cloudflare
+      progress('Creating DNS records (Cloudflare)');
       try {
-        await dnsManager.createZone(domain, vps.ip, [
-          this.config.dns.ns1,
-          this.config.dns.ns2,
-        ]);
+        const cf = this._getCloudflare();
+        const domainRow = this.db.getDomainByName(domain);
+        if (domainRow && domainRow.cloudflare_zone_id) {
+          await cf.addARecord(domainRow.cloudflare_zone_id, domain, vps.ip);
+          await cf.addARecord(domainRow.cloudflare_zone_id, `www.${domain}`, vps.ip);
+        }
       } catch (err) {
-        // Zone might already exist; try adding records instead
-        logger.warn('Zone creation failed, trying to add records', { error: err.message });
-        await dnsManager.addARecord(domain, '@', vps.ip);
-        await dnsManager.addARecord(domain, 'www', vps.ip);
+        logger.warn('Cloudflare DNS record creation skipped', { error: err.message });
       }
 
       // Step 9: Test and reload Nginx
@@ -170,7 +179,6 @@ class VPSManager {
     if (!vps) throw new Error('VPS not found');
 
     const ssh = new SSHManager(vps);
-    const dnsManager = new PowerDNSManager(this.config.dns.apiUrl, this.config.dns.apiKey);
     const ssl = new SSLManager(ssh);
     const fileManager = new FileManager(this.config.upload.tempDir);
 
@@ -209,8 +217,16 @@ class VPSManager {
       progress('Activating site configuration');
       await ssh.exec(`ln -sf ${configPath} ${enabledPath}`);
 
+      // Add subdomain A record via Cloudflare
       progress(`Creating DNS A record for ${fullDomain}`);
-      await dnsManager.addARecord(domainRow.domain, subdomain, vps.ip);
+      try {
+        const cf = this._getCloudflare();
+        if (domainRow.cloudflare_zone_id) {
+          await cf.addARecord(domainRow.cloudflare_zone_id, fullDomain, vps.ip);
+        }
+      } catch (err) {
+        logger.warn('Cloudflare subdomain DNS skipped', { error: err.message });
+      }
 
       progress('Testing Nginx configuration');
       await ssh.exec('nginx -t 2>&1');
@@ -427,7 +443,6 @@ class VPSManager {
     if (!vps) throw new Error('VPS not found');
 
     const ssh = new SSHManager(vps);
-    const dnsManager = new PowerDNSManager(this.config.dns.apiUrl, this.config.dns.apiKey);
     const ssl = new SSLManager(ssh);
     const progress = progressCallback || (() => {});
 
@@ -439,7 +454,7 @@ class VPSManager {
       const subdomains = this.db.getSubdomainsByDomain(domainId);
       for (const sub of subdomains) {
         progress(`Removing subdomain: ${sub.full_domain}`);
-        await this._removeSubdomainFromServer(ssh, dnsManager, ssl, sub, domainRow.domain);
+        await this._removeSubdomainFromServer(ssh, ssl, sub, domainRow);
       }
 
       // Disable Nginx config
@@ -465,9 +480,16 @@ class VPSManager {
       progress('Reloading Nginx');
       await ssh.exec('systemctl reload nginx');
 
-      // Delete DNS zone
-      progress('Deleting DNS records');
-      await dnsManager.deleteZone(domainRow.domain);
+      // Delete Cloudflare DNS zone
+      progress('Deleting DNS zone (Cloudflare)');
+      try {
+        if (domainRow.cloudflare_zone_id) {
+          const cf = this._getCloudflare();
+          await cf.deleteZone(domainRow.cloudflare_zone_id);
+        }
+      } catch (err) {
+        logger.warn('Cloudflare zone deletion failed', { error: err.message });
+      }
 
       // Delete from database (cascades subdomains)
       progress('Updating database');
@@ -512,7 +534,6 @@ class VPSManager {
     if (!vps) throw new Error('VPS not found');
 
     const ssh = new SSHManager(vps);
-    const dnsManager = new PowerDNSManager(this.config.dns.apiUrl, this.config.dns.apiKey);
     const ssl = new SSLManager(ssh);
     const progress = progressCallback || (() => {});
 
@@ -520,7 +541,7 @@ class VPSManager {
       progress('Connecting to VPS');
       await ssh.connect();
 
-      await this._removeSubdomainFromServer(ssh, dnsManager, ssl, subdomainRow, domainRow.domain, progress);
+      await this._removeSubdomainFromServer(ssh, ssl, subdomainRow, domainRow, progress);
 
       progress('Reloading Nginx');
       await ssh.exec('systemctl reload nginx');
@@ -590,7 +611,7 @@ class VPSManager {
   /**
    * Internal helper to remove a subdomain's server resources.
    */
-  async _removeSubdomainFromServer(ssh, dnsManager, ssl, subdomainRow, parentDomain, progress) {
+  async _removeSubdomainFromServer(ssh, ssl, subdomainRow, domainRow, progress) {
     const p = progress || (() => {});
 
     p(`Disabling Nginx for ${subdomainRow.full_domain}`);
@@ -608,8 +629,16 @@ class VPSManager {
       await ssh.exec(`rm -rf ${subdomainRow.site_path}`).catch(() => {});
     }
 
+    // Delete subdomain DNS record from Cloudflare
     p('Deleting DNS record');
-    await dnsManager.deleteARecord(parentDomain, subdomainRow.subdomain);
+    try {
+      if (domainRow.cloudflare_zone_id) {
+        const cf = this._getCloudflare();
+        await cf.deleteARecordByName(domainRow.cloudflare_zone_id, subdomainRow.full_domain);
+      }
+    } catch (err) {
+      logger.warn('Cloudflare subdomain DNS deletion failed', { error: err.message });
+    }
   }
 }
 

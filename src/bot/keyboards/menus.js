@@ -114,6 +114,7 @@ function adminPanel() {
       inline_keyboard: [
         [{ text: '🖥️ VPS Management', callback_data: 'admin_vps' }],
         [{ text: '👥 Team Management', callback_data: 'admin_team' }],
+        [{ text: '☁️ Cloudflare Settings', callback_data: 'admin_cloudflare' }],
         [{ text: '📊 Statistics', callback_data: 'admin_stats' }],
         [{ text: '📜 Activity Logs', callback_data: 'admin_logs' }],
         [{ text: '🏠 Main Menu', callback_data: 'main_menu' }],

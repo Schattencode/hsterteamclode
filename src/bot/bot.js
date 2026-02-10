@@ -68,7 +68,7 @@ function createBot(db, config) {
         state.vpsName = text;
         state.step = 'vps_enter_ip';
         return bot.sendMessage(chatId,
-          `✅ VPS Name: ${esc(text)}\n\n📝 Step 2/5\nPlease enter the IP address of your VPS:\nExample: 123.45.67.89`,
+          `✅ VPS Name: ${esc(text)}\n\n📝 Step 2/4\nPlease enter the IP address of your VPS:\nExample: 123.45.67.89`,
           menus.cancelButton()
         );
       }
@@ -85,7 +85,7 @@ function createBot(db, config) {
         state.vpsIP = text;
         state.step = 'vps_enter_user';
         return bot.sendMessage(chatId,
-          `✅ IP Address: ${text}\n\n📝 Step 3/5\nPlease enter SSH username (usually 'root'):`,
+          `✅ IP Address: ${text}\n\n📝 Step 3/4\nPlease enter SSH username (usually 'root'):`,
           menus.cancelButton()
         );
       }
@@ -94,7 +94,7 @@ function createBot(db, config) {
         state.vpsUser = text;
         state.step = 'vps_select_auth';
         return bot.sendMessage(chatId,
-          `✅ SSH User: ${esc(text)}\n\n📝 Step 4/5\nHow do you want to authenticate?`,
+          `✅ SSH User: ${esc(text)}\n\n📝 Step 4/4\nHow do you want to authenticate?`,
           menus.vpsAuthType()
         );
       }
@@ -134,7 +134,7 @@ function createBot(db, config) {
         });
 
         state.vpsId = vps.id;
-        state.step = 'vps_install_dns_prompt';
+        state.step = 'vps_install_nginx_prompt';
 
         activityLogger.log({
           telegramId: userId,
@@ -147,8 +147,15 @@ function createBot(db, config) {
         return bot.sendMessage(chatId,
           `✅ SSH connection successful!\n` +
           `Hostname: ${testResult.hostname}\n\n` +
-          `📝 Step 5/5\nDo you want to install PowerDNS on this VPS?\n(Required for DNS management)`,
-          menus.vpsInstallDNS()
+          `📝 Final Step\nInstalling Nginx web server on this VPS...`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '✅ Install Nginx', callback_data: 'vps_install_nginx' }],
+                [{ text: '❌ Cancel', callback_data: 'cancel' }],
+              ],
+            },
+          }
         );
       }
 
@@ -197,7 +204,7 @@ function createBot(db, config) {
         });
 
         state.vpsId = vps.id;
-        state.step = 'vps_install_dns_prompt';
+        state.step = 'vps_install_nginx_prompt';
 
         activityLogger.log({
           telegramId: userId,
@@ -210,8 +217,44 @@ function createBot(db, config) {
         return bot.sendMessage(chatId,
           `✅ SSH connection successful!\n` +
           `Hostname: ${testResult.hostname}\n\n` +
-          `📝 Step 5/5\nDo you want to install PowerDNS on this VPS?\n(Required for DNS management)`,
-          menus.vpsInstallDNS()
+          `📝 Final Step\nInstalling Nginx web server on this VPS...`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '✅ Install Nginx', callback_data: 'vps_install_nginx' }],
+                [{ text: '❌ Cancel', callback_data: 'cancel' }],
+              ],
+            },
+          }
+        );
+      }
+
+      // ── CLOUDFLARE TOKEN INPUT ──
+
+      if (state.step === 'cf_enter_token') {
+        const token = text.trim();
+
+        await bot.sendMessage(chatId, '🔍 Verifying Cloudflare token...');
+
+        const CloudflareManager = require('../services/cloudflare');
+        const cf = new CloudflareManager(token);
+        const result = await cf.verifyToken();
+
+        if (!result.valid) {
+          return bot.sendMessage(chatId,
+            `❌ Invalid token: ${result.error || 'verification failed'}\n\nPlease try again:`,
+            menus.cancelButton()
+          );
+        }
+
+        db.setSetting('cloudflare_token', token);
+        delete bot._userStates[userId];
+
+        return bot.sendMessage(chatId,
+          `✅ <b>Cloudflare connected!</b>\n\n` +
+          `Token verified and saved.\n` +
+          `DNS management is now fully automatic.`,
+          { parse_mode: 'HTML', ...menus.backToMain() }
         );
       }
 
@@ -245,14 +288,40 @@ function createBot(db, config) {
         if (vpsList.length === 1) {
           // Auto-select if only one VPS
           const vps = vpsList[0];
-          state.step = 'domain_select_vps';
 
-          // Trigger VPS selection directly
+          // Create Cloudflare zone to get nameservers
+          let ns1 = 'pending', ns2 = 'pending', zoneId = null;
+          const cfToken = db.getSetting('cloudflare_token');
+
+          if (cfToken) {
+            try {
+              await bot.sendMessage(chatId, '☁️ Creating DNS zone in Cloudflare...');
+              const CloudflareManager = require('../services/cloudflare');
+              const cf = new CloudflareManager(cfToken);
+              const zone = await cf.createZone(domain);
+              zoneId = zone.zoneId;
+              ns1 = zone.nameservers[0];
+              ns2 = zone.nameservers[1];
+            } catch (err) {
+              return bot.sendMessage(chatId,
+                `❌ Cloudflare error: ${err.message}`,
+                { ...menus.cancelButton() }
+              );
+            }
+          } else {
+            return bot.sendMessage(chatId,
+              `❌ Cloudflare API token not configured.\n\n` +
+              `Admin must set it first:\nAdmin Panel → ☁️ Cloudflare Settings`,
+              { ...menus.backToMain() }
+            );
+          }
+
           const domainRow = db.createDomain({
             domain,
             vps_id: vps.id,
-            ns1: config.dns.ns1,
-            ns2: config.dns.ns2,
+            ns1,
+            ns2,
+            cloudflare_zone_id: zoneId,
             created_by: String(userId),
           });
 
@@ -266,8 +335,8 @@ function createBot(db, config) {
             `📋 <b>NAMESERVER CONFIGURATION</b>\n\n` +
             `Update nameservers at your registrar:\n\n` +
             `━━━━━━━━━━━━━━━━━━━━━━\n` +
-            `NS1: <code>${config.dns.ns1}</code>\n` +
-            `NS2: <code>${config.dns.ns2}</code>\n` +
+            `NS1: <code>${ns1}</code>\n` +
+            `NS2: <code>${ns2}</code>\n` +
             `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
             `📖 Steps:\n` +
             `1. Login to your domain registrar\n` +
@@ -632,12 +701,13 @@ function createBot(db, config) {
         name: state.vpsName,
         ip: state.vpsIP,
         ssh_user: state.vpsUser,
+        ssh_auth_type: 'key',
         ssh_key_path: zipPath,
         ssh_port: 22,
       });
 
       state.vpsId = vps.id;
-      state.step = 'vps_install_dns_prompt';
+      state.step = 'vps_install_nginx_prompt';
 
       activityLogger.log({
         telegramId: userId,
@@ -648,8 +718,15 @@ function createBot(db, config) {
 
       return bot.sendMessage(chatId,
         `✅ SSH connection successful!\nHostname: ${testResult.hostname}\n\n` +
-        `Do you want to install PowerDNS on this VPS?\n(Required for DNS management)`,
-        menus.vpsInstallDNS()
+        `📝 Final Step\nInstalling Nginx web server on this VPS...`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '✅ Install Nginx', callback_data: 'vps_install_nginx' }],
+              [{ text: '❌ Cancel', callback_data: 'cancel' }],
+            ],
+          },
+        }
       );
     } catch (err) {
       logger.error('SSH key upload failed', { error: err.message });

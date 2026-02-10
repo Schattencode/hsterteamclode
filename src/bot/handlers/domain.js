@@ -256,12 +256,42 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     const vps = db.getVPS(vpsId);
     const domain = state.domain;
 
+    // Create Cloudflare zone to get nameservers
+    let ns1 = 'pending', ns2 = 'pending', zoneId = null;
+    const cfToken = db.getSetting('cloudflare_token');
+
+    if (cfToken) {
+      try {
+        await bot.editMessageText(
+          `☁️ Creating DNS zone for <b>${domain}</b>...`,
+          { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'HTML' }
+        );
+        const CloudflareManager = require('../../services/cloudflare');
+        const cf = new CloudflareManager(cfToken);
+        const zone = await cf.createZone(domain);
+        zoneId = zone.zoneId;
+        ns1 = zone.nameservers[0];
+        ns2 = zone.nameservers[1];
+      } catch (err) {
+        return bot.editMessageText(
+          `❌ Cloudflare error: ${err.message}`,
+          { chat_id: chatId, message_id: query.message.message_id, ...menus.backToMain() }
+        );
+      }
+    } else {
+      return bot.editMessageText(
+        `❌ Cloudflare API token not configured.\n\nAdmin Panel → ☁️ Cloudflare Settings`,
+        { chat_id: chatId, message_id: query.message.message_id, ...menus.backToMain() }
+      );
+    }
+
     // Save domain to database
     const domainRow = db.createDomain({
       domain,
       vps_id: vpsId,
-      ns1: config.dns.ns1,
-      ns2: config.dns.ns2,
+      ns1,
+      ns2,
+      cloudflare_zone_id: zoneId,
       created_by: String(userId),
     });
 
@@ -273,23 +303,18 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     const text =
       `✅ VPS: ${vps.name}\n\n` +
       `📋 <b>NAMESERVER CONFIGURATION</b>\n\n` +
-      `To activate your domain, update nameservers at your domain registrar:\n\n` +
-      `🌐 Domain: <b>${domain}</b>\n` +
-      `📍 Registrar: (Namecheap, GoDaddy, Cloudflare, etc.)\n\n` +
-      `Change nameservers to:\n` +
+      `Update nameservers at your registrar:\n\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `NS1: <code>${config.dns.ns1}</code>\n` +
-      `NS2: <code>${config.dns.ns2}</code>\n` +
+      `NS1: <code>${ns1}</code>\n` +
+      `NS2: <code>${ns2}</code>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-      `📖 How to change nameservers:\n` +
+      `📖 Steps:\n` +
       `1. Login to your domain registrar\n` +
       `2. Find "DNS Settings" or "Nameservers"\n` +
       `3. Select "Custom Nameservers"\n` +
       `4. Enter the NS records above\n` +
       `5. Save changes\n\n` +
-      `⏱️ Propagation: 5 minutes to 48 hours\n` +
-      `Usually completes within 1-2 hours\n\n` +
-      `Once configured, click below to verify:`;
+      `⏱️ Propagation: 5 min to 48 hours`;
 
     await bot.editMessageText(text, {
       chat_id: chatId,
@@ -326,13 +351,18 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
 
     // We attempt verification but proceed even if NS haven't propagated yet,
     // since the user can still upload files and DNS will work once propagated.
-    const PowerDNSManager = require('../../services/dns');
-    const dnsManager = new PowerDNSManager(config.dns.apiUrl, config.dns.apiKey);
-    const nsResult = await dnsManager.verifyNameservers(domain);
+    const dns = require('dns').promises;
+    let nsVerified = false;
+    try {
+      const nsRecords = await dns.resolveNs(domain);
+      nsVerified = nsRecords.length > 0;
+    } catch {
+      // DNS not propagated yet
+    }
 
     let verifyText;
-    if (nsResult.verified) {
-      verifyText = `✅ <b>NAMESERVERS VERIFIED!</b>\n\n${domain} now points to our DNS servers.`;
+    if (nsVerified) {
+      verifyText = `✅ <b>NAMESERVERS VERIFIED!</b>\n\n${domain} now points to Cloudflare DNS.`;
       db.updateDomain(state.domainId, { ns_configured: 1 });
     } else {
       verifyText =

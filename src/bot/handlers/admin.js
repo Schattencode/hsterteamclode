@@ -83,7 +83,7 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     bot._userStates[query.from.id] = { step: 'vps_enter_name' };
 
     await bot.editMessageText(
-      `📝 <b>VPS Setup — Step 1/5</b>\n\n` +
+      `📝 <b>VPS Setup — Step 1/4</b>\n\n` +
       `Please enter a name for this VPS:\n` +
       `Example: Main Server, Production, Staging`,
       {
@@ -387,10 +387,10 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
   });
 
   // ────────────────────────────────────────────
-  // Install PowerDNS on VPS
+  // Install Nginx on VPS (after SSH test)
   // ────────────────────────────────────────────
   bot.on('callback_query', async (query) => {
-    if (query.data !== 'vps_install_dns') return;
+    if (query.data !== 'vps_install_nginx') return;
 
     const chatId = query.message.chat.id;
     const userId = query.from.id;
@@ -405,11 +405,9 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     const vps = db.getVPS(state.vpsId);
 
     await bot.editMessageText(
-      `📦 <b>Installing on ${vps.name}...</b>\n\n` +
-      `1. Freeing port 53 (systemd-resolved)\n` +
-      `2. Installing Nginx\n` +
-      `3. Installing PowerDNS\n\n` +
-      `⏳ This may take 2-5 minutes...`,
+      `📦 <b>Setting up ${vps.name}...</b>\n\n` +
+      `Installing Nginx web server...\n\n` +
+      `⏳ This may take 1-2 minutes...`,
       { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'HTML' }
     );
 
@@ -421,29 +419,23 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
       await ssh.connect();
 
       const installer = new PowerDNSInstaller(ssh);
-
-      // Install Nginx first
       await installer.installNginx();
-
-      // Install PowerDNS
-      const result = await installer.install();
-
-      // Update VPS record
-      db.updateVPS(state.vpsId, { dns_configured: 1 });
 
       ssh.disconnect();
 
       delete bot._userStates[userId];
+
+      const cfToken = db.getSetting('cloudflare_token');
+      const cfStatus = cfToken ? '✅ Configured' : '⚠️ Not configured (set in Admin Panel → Cloudflare Settings)';
 
       const text =
         `✅ <b>VPS SETUP COMPLETE!</b>\n\n` +
         `🖥️ VPS: ${vps.name}\n` +
         `🌐 IP: ${vps.ip}\n` +
         `🔐 SSH: Connected\n` +
-        `🌍 DNS: Active\n\n` +
-        `Your nameservers:\n` +
-        `NS1: <code>${config.dns.ns1}</code> (${vps.ip})\n` +
-        `NS2: <code>${config.dns.ns2}</code> (${vps.ip})`;
+        `🌍 Nginx: Installed\n` +
+        `☁️ Cloudflare: ${cfStatus}\n\n` +
+        `You can now add domains!`;
 
       await bot.editMessageText(text, {
         chat_id: chatId,
@@ -452,9 +444,9 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
         ...menus.afterVPSSetup(state.vpsId),
       });
     } catch (err) {
-      logger.error('PowerDNS installation failed', { error: err.message });
+      logger.error('Nginx installation failed', { error: err.message });
       await bot.editMessageText(
-        `❌ PowerDNS installation failed:\n${err.message}`,
+        `❌ Nginx installation failed:\n${err.message}`,
         {
           chat_id: chatId,
           message_id: query.message.message_id,
@@ -464,35 +456,69 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     }
   });
 
-  // Skip DNS installation
+  // ────────────────────────────────────────────
+  // Cloudflare Settings
+  // ────────────────────────────────────────────
   bot.on('callback_query', async (query) => {
-    if (query.data !== 'vps_skip_dns') return;
+    if (query.data !== 'admin_cloudflare') return;
 
     const chatId = query.message.chat.id;
-    const userId = query.from.id;
-
+    const access = await auth.checkAdmin(query);
+    if (!access.allowed) return bot.answerCallbackQuery(query.id, { text: 'Access denied' });
     await bot.answerCallbackQuery(query.id);
 
-    const state = (bot._userStates || {})[userId];
-    if (!state || !state.vpsId) return;
-
-    const vps = db.getVPS(state.vpsId);
-    delete bot._userStates[userId];
+    const cfToken = db.getSetting('cloudflare_token');
+    const status = cfToken ? '✅ Connected' : '❌ Not configured';
+    const maskedToken = cfToken ? cfToken.slice(0, 8) + '...' + cfToken.slice(-4) : 'Not set';
 
     const text =
-      `✅ <b>VPS Added!</b>\n\n` +
-      `🖥️ VPS: ${vps.name}\n` +
-      `🌐 IP: ${vps.ip}\n` +
-      `🔐 SSH: Connected\n` +
-      `🌍 DNS: Skipped\n\n` +
-      `You can install PowerDNS later from VPS settings.`;
+      `☁️ <b>CLOUDFLARE SETTINGS</b>\n\n` +
+      `Status: ${status}\n` +
+      `Token: <code>${maskedToken}</code>\n\n` +
+      `Cloudflare manages DNS for all your domains.\n` +
+      `Each domain gets unique nameservers automatically.`;
 
     await bot.editMessageText(text, {
       chat_id: chatId,
       message_id: query.message.message_id,
       parse_mode: 'HTML',
-      ...menus.afterVPSSetup(state.vpsId),
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: cfToken ? '🔄 Update API Token' : '🔑 Set API Token', callback_data: 'cf_set_token' }],
+          [{ text: '⬅️ Back', callback_data: 'admin_panel' }],
+        ],
+      },
     });
+  });
+
+  // Start Cloudflare token input flow
+  bot.on('callback_query', async (query) => {
+    if (query.data !== 'cf_set_token') return;
+
+    const chatId = query.message.chat.id;
+    const access = await auth.checkAdmin(query);
+    if (!access.allowed) return bot.answerCallbackQuery(query.id, { text: 'Access denied' });
+    await bot.answerCallbackQuery(query.id);
+
+    bot._userStates = bot._userStates || {};
+    bot._userStates[query.from.id] = { step: 'cf_enter_token' };
+
+    await bot.editMessageText(
+      `🔑 <b>Enter Cloudflare API Token</b>\n\n` +
+      `To get your token:\n` +
+      `1. Go to dash.cloudflare.com\n` +
+      `2. My Profile → API Tokens\n` +
+      `3. Create Token → "Edit zone DNS" template\n` +
+      `4. Zone Resources: Include → All Zones\n` +
+      `5. Create Token and copy it\n\n` +
+      `Paste the token below:`,
+      {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+        parse_mode: 'HTML',
+        ...menus.cancelButton(),
+      }
+    );
   });
 
   // ────────────────────────────────────────────

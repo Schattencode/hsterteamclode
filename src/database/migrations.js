@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS domains (
   vps_id INTEGER NOT NULL,
   ns1 TEXT,
   ns2 TEXT,
+  cloudflare_zone_id TEXT,
   ns_configured BOOLEAN DEFAULT 0,
   site_path TEXT,
   nginx_config_path TEXT,
@@ -79,6 +80,12 @@ CREATE TABLE IF NOT EXISTS activity_logs (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Bot settings (key-value store for Cloudflare token, etc.)
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+
 -- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_domains_vps ON domains(vps_id);
 CREATE INDEX IF NOT EXISTS idx_subdomains_domain ON subdomains(domain_id);
@@ -106,6 +113,19 @@ function runMigrations(db) {
     }
   } catch {
     // Columns already exist or fresh database
+  }
+
+  // Migration: add cloudflare_zone_id column to domains if missing
+  try {
+    const domCols = db.exec("PRAGMA table_info(domains)");
+    if (domCols.length > 0) {
+      const domColNames = domCols[0].values.map(row => row[1]);
+      if (!domColNames.includes('cloudflare_zone_id')) {
+        db.run("ALTER TABLE domains ADD COLUMN cloudflare_zone_id TEXT");
+      }
+    }
+  } catch {
+    // Column already exists or fresh database
   }
 }
 
