@@ -38,6 +38,15 @@ class VPSManager {
     }
     // Always ensure config directories exist
     await ssh.exec('mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled');
+    // Ensure nginx.conf includes sites-enabled
+    try {
+      const conf = await ssh.exec('cat /etc/nginx/nginx.conf');
+      if (!conf.includes('sites-enabled')) {
+        await ssh.exec(`sed -i '/http {/a \\    include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf`);
+      }
+    } catch { /* ignore */ }
+    // Remove default site to avoid conflicts
+    await ssh.exec('rm -f /etc/nginx/sites-enabled/default').catch(() => {});
   }
 
   /**

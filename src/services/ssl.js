@@ -16,7 +16,7 @@ class SSLManager {
       logger.info('Installing certbot', { domain });
       await this.ssh.exec(
         'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx',
-        120000
+        300000
       );
     }
 
