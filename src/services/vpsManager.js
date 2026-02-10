@@ -124,7 +124,7 @@ class VPSManager {
 
       // Step 9: Test and reload Nginx
       progress('Testing Nginx configuration');
-      await ssh.exec('nginx -t 2>&1');
+      await ssh.exec('nginx -t');
 
       progress('Reloading Nginx');
       await ssh.exec('systemctl reload nginx');
@@ -261,7 +261,7 @@ class VPSManager {
       }
 
       progress('Testing Nginx configuration');
-      await ssh.exec('nginx -t 2>&1');
+      await ssh.exec('nginx -t');
 
       progress('Reloading Nginx');
       await ssh.exec('systemctl reload nginx');
@@ -370,33 +370,30 @@ class VPSManager {
       await ssh.exec(`chown -R www-data:www-data ${sitePath}`);
       await ssh.exec(`chmod -R 755 ${sitePath}`);
 
-      // If nginx config was never created, generate it now
-      if (!domainRow.nginx_config_path) {
-        progress('Generating Nginx configuration');
-        const config = nginxConfig.generateDomainConfig(domainRow.domain, sitePath);
-        const configPath = nginxConfig.getConfigPath(domainRow.domain);
-        const enabledPath = nginxConfig.getEnabledPath(domainRow.domain);
+      // Always regenerate and upload Nginx config to ensure it's up to date
+      progress('Generating Nginx configuration');
+      const config = nginxConfig.generateDomainConfig(domainRow.domain, sitePath);
+      const configPath = nginxConfig.getConfigPath(domainRow.domain);
+      const enabledPath = nginxConfig.getEnabledPath(domainRow.domain);
 
-        await fs.mkdir(fileManager.tempDir, { recursive: true });
-        const tempConfig = path.resolve(fileManager.tempDir, `${domainRow.domain}.conf`);
-        await fs.writeFile(tempConfig, config);
-        await ssh.uploadFile(tempConfig, configPath);
-        await fs.unlink(tempConfig);
+      await fs.mkdir(fileManager.tempDir, { recursive: true });
+      const tempConfig = path.resolve(fileManager.tempDir, `${domainRow.domain}.conf`);
+      await fs.writeFile(tempConfig, config);
+      await ssh.uploadFile(tempConfig, configPath);
+      await fs.unlink(tempConfig);
 
-        await ssh.exec(`ln -sf ${configPath} ${enabledPath}`);
+      await ssh.exec(`ln -sf ${configPath} ${enabledPath}`);
 
+      if (!domainRow.site_path || !domainRow.nginx_config_path) {
         this.db.updateDomain(domainId, {
           site_path: sitePath,
           nginx_config_path: configPath,
           status: 'active',
         });
-      } else if (!domainRow.site_path) {
-        // Just update the site_path if it was null
-        this.db.updateDomain(domainId, { site_path: sitePath, status: 'active' });
       }
 
       progress('Reloading Nginx');
-      await ssh.exec('nginx -t 2>&1');
+      await ssh.exec('nginx -t');
       await ssh.exec('systemctl reload nginx');
 
       // If first deploy never completed, create DNS A-records and obtain SSL
