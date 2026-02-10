@@ -86,8 +86,8 @@ CREATE INDEX IF NOT EXISTS idx_activity_logs_created ON activity_logs(created_at
 `;
 
 function runMigrations(db) {
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+  // sql.js uses db.run() for pragmas (no .pragma() method)
+  db.run('PRAGMA foreign_keys = ON');
   db.exec(SCHEMA);
 }
 

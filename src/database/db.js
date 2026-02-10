@@ -1,31 +1,95 @@
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
 const path = require('path');
-const { runMigrations } = require('./migrations');
+const fs = require('fs');
 const logger = require('../utils/logger');
 
 class DB {
   constructor(dbPath) {
     this.dbPath = dbPath;
     this.db = null;
+    this._saveTimer = null;
   }
 
-  initialize() {
+  async initialize() {
     const dir = path.dirname(this.dbPath);
-    const fs = require('fs');
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    this.db = new Database(this.dbPath);
+    const SQL = await initSqlJs();
+
+    // Load existing database or create new one
+    if (fs.existsSync(this.dbPath)) {
+      const buffer = fs.readFileSync(this.dbPath);
+      this.db = new SQL.Database(buffer);
+    } else {
+      this.db = new SQL.Database();
+    }
+
+    // Enable foreign keys
+    this.db.run('PRAGMA foreign_keys = ON');
+
+    // Run migrations
+    const { runMigrations } = require('./migrations');
     runMigrations(this.db);
+
+    this._save();
     logger.info('Database initialized', { path: this.dbPath });
   }
 
+  // Persist database to disk
+  _save() {
+    if (!this.db) return;
+    const data = this.db.export();
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(this.dbPath, buffer);
+  }
+
+  // Auto-save after write operations (debounced)
+  _autoSave() {
+    if (this._saveTimer) clearTimeout(this._saveTimer);
+    this._saveTimer = setTimeout(() => this._save(), 100);
+  }
+
   close() {
+    if (this._saveTimer) {
+      clearTimeout(this._saveTimer);
+    }
     if (this.db) {
+      this._save();
       this.db.close();
+      this.db = null;
       logger.info('Database connection closed');
     }
+  }
+
+  // ── Helpers for sql.js ──
+
+  // Run a SELECT and return all rows as array of objects
+  _all(sql, params = []) {
+    const stmt = this.db.prepare(sql);
+    stmt.bind(params);
+    const rows = [];
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject());
+    }
+    stmt.free();
+    return rows;
+  }
+
+  // Run a SELECT and return first row as object (or undefined)
+  _get(sql, params = []) {
+    const rows = this._all(sql, params);
+    return rows.length > 0 ? rows[0] : undefined;
+  }
+
+  // Run INSERT/UPDATE/DELETE and return { lastInsertRowid, changes }
+  _run(sql, params = []) {
+    this.db.run(sql, params);
+    const lastId = this.db.exec('SELECT last_insert_rowid() as id')[0]?.values[0][0];
+    const changes = this.db.getRowsModified();
+    this._autoSave();
+    return { lastInsertRowid: lastId, changes };
   }
 
   // ──────────────────────────────────────
@@ -33,28 +97,27 @@ class DB {
   // ──────────────────────────────────────
 
   createVPS({ name, ip, ssh_user, ssh_key_path, ssh_port }) {
-    const stmt = this.db.prepare(
-      `INSERT INTO vps (name, ip, ssh_user, ssh_key_path, ssh_port)
-       VALUES (?, ?, ?, ?, ?)`
+    const result = this._run(
+      `INSERT INTO vps (name, ip, ssh_user, ssh_key_path, ssh_port) VALUES (?, ?, ?, ?, ?)`,
+      [name, ip, ssh_user || 'root', ssh_key_path, ssh_port || 22]
     );
-    const result = stmt.run(name, ip, ssh_user || 'root', ssh_key_path, ssh_port || 22);
     return this.getVPS(result.lastInsertRowid);
   }
 
   getVPS(id) {
-    return this.db.prepare('SELECT * FROM vps WHERE id = ?').get(id);
+    return this._get('SELECT * FROM vps WHERE id = ?', [id]);
   }
 
   getVPSByIP(ip) {
-    return this.db.prepare('SELECT * FROM vps WHERE ip = ?').get(ip);
+    return this._get('SELECT * FROM vps WHERE ip = ?', [ip]);
   }
 
   getAllVPS() {
-    return this.db.prepare('SELECT * FROM vps ORDER BY created_at DESC').all();
+    return this._all('SELECT * FROM vps ORDER BY created_at DESC');
   }
 
   getActiveVPS() {
-    return this.db.prepare("SELECT * FROM vps WHERE status = 'active' ORDER BY name").all();
+    return this._all("SELECT * FROM vps WHERE status = 'active' ORDER BY name");
   }
 
   updateVPS(id, fields) {
@@ -74,17 +137,17 @@ class DB {
     updates.push("updated_at = CURRENT_TIMESTAMP");
     values.push(id);
 
-    this.db.prepare(`UPDATE vps SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+    this._run(`UPDATE vps SET ${updates.join(', ')} WHERE id = ?`, values);
     return this.getVPS(id);
   }
 
   deleteVPS(id) {
-    this.db.prepare('DELETE FROM vps WHERE id = ?').run(id);
+    this._run('DELETE FROM vps WHERE id = ?', [id]);
   }
 
   getVPSDomainCount(vpsId) {
-    const row = this.db.prepare('SELECT COUNT(*) as count FROM domains WHERE vps_id = ?').get(vpsId);
-    return row.count;
+    const row = this._get('SELECT COUNT(*) as count FROM domains WHERE vps_id = ?', [vpsId]);
+    return row ? row.count : 0;
   }
 
   // ──────────────────────────────────────
@@ -92,32 +155,31 @@ class DB {
   // ──────────────────────────────────────
 
   createDomain({ domain, vps_id, ns1, ns2, created_by }) {
-    const stmt = this.db.prepare(
-      `INSERT INTO domains (domain, vps_id, ns1, ns2, created_by)
-       VALUES (?, ?, ?, ?, ?)`
+    const result = this._run(
+      `INSERT INTO domains (domain, vps_id, ns1, ns2, created_by) VALUES (?, ?, ?, ?, ?)`,
+      [domain, vps_id, ns1, ns2, created_by]
     );
-    const result = stmt.run(domain, vps_id, ns1, ns2, created_by);
     return this.getDomain(result.lastInsertRowid);
   }
 
   getDomain(id) {
-    return this.db.prepare('SELECT * FROM domains WHERE id = ?').get(id);
+    return this._get('SELECT * FROM domains WHERE id = ?', [id]);
   }
 
   getDomainByName(domain) {
-    return this.db.prepare('SELECT * FROM domains WHERE domain = ?').get(domain);
+    return this._get('SELECT * FROM domains WHERE domain = ?', [domain]);
   }
 
   getAllDomains() {
-    return this.db.prepare('SELECT * FROM domains ORDER BY created_at DESC').all();
+    return this._all('SELECT * FROM domains ORDER BY created_at DESC');
   }
 
   getDomainsByVPS(vpsId) {
-    return this.db.prepare('SELECT * FROM domains WHERE vps_id = ? ORDER BY domain').all(vpsId);
+    return this._all('SELECT * FROM domains WHERE vps_id = ? ORDER BY domain', [vpsId]);
   }
 
   getDomainsByUser(telegramId) {
-    return this.db.prepare('SELECT * FROM domains WHERE created_by = ? ORDER BY domain').all(telegramId);
+    return this._all('SELECT * FROM domains WHERE created_by = ? ORDER BY domain', [telegramId]);
   }
 
   updateDomain(id, fields) {
@@ -140,18 +202,18 @@ class DB {
     updates.push("updated_at = CURRENT_TIMESTAMP");
     values.push(id);
 
-    this.db.prepare(`UPDATE domains SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+    this._run(`UPDATE domains SET ${updates.join(', ')} WHERE id = ?`, values);
     return this.getDomain(id);
   }
 
   deleteDomain(id) {
     // Subdomains cascade delete via foreign key
-    this.db.prepare('DELETE FROM domains WHERE id = ?').run(id);
+    this._run('DELETE FROM domains WHERE id = ?', [id]);
   }
 
   getDomainCount() {
-    const row = this.db.prepare('SELECT COUNT(*) as count FROM domains').get();
-    return row.count;
+    const row = this._get('SELECT COUNT(*) as count FROM domains');
+    return row ? row.count : 0;
   }
 
   // ──────────────────────────────────────
@@ -159,28 +221,28 @@ class DB {
   // ──────────────────────────────────────
 
   createSubdomain({ subdomain, domain_id, full_domain, site_path, nginx_config_path, ssl_status, ssl_expiry, created_by }) {
-    const stmt = this.db.prepare(
+    const result = this._run(
       `INSERT INTO subdomains (subdomain, domain_id, full_domain, site_path, nginx_config_path, ssl_status, ssl_expiry, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    const result = stmt.run(
-      subdomain, domain_id, full_domain,
-      site_path || null, nginx_config_path || null,
-      ssl_status || 'pending', ssl_expiry || null, created_by
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        subdomain, domain_id, full_domain,
+        site_path || null, nginx_config_path || null,
+        ssl_status || 'pending', ssl_expiry || null, created_by,
+      ]
     );
     return this.getSubdomain(result.lastInsertRowid);
   }
 
   getSubdomain(id) {
-    return this.db.prepare('SELECT * FROM subdomains WHERE id = ?').get(id);
+    return this._get('SELECT * FROM subdomains WHERE id = ?', [id]);
   }
 
   getSubdomainByFullDomain(fullDomain) {
-    return this.db.prepare('SELECT * FROM subdomains WHERE full_domain = ?').get(fullDomain);
+    return this._get('SELECT * FROM subdomains WHERE full_domain = ?', [fullDomain]);
   }
 
   getSubdomainsByDomain(domainId) {
-    return this.db.prepare('SELECT * FROM subdomains WHERE domain_id = ? ORDER BY subdomain').all(domainId);
+    return this._all('SELECT * FROM subdomains WHERE domain_id = ? ORDER BY subdomain', [domainId]);
   }
 
   updateSubdomain(id, fields) {
@@ -202,22 +264,22 @@ class DB {
     updates.push("updated_at = CURRENT_TIMESTAMP");
     values.push(id);
 
-    this.db.prepare(`UPDATE subdomains SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+    this._run(`UPDATE subdomains SET ${updates.join(', ')} WHERE id = ?`, values);
     return this.getSubdomain(id);
   }
 
   deleteSubdomain(id) {
-    this.db.prepare('DELETE FROM subdomains WHERE id = ?').run(id);
+    this._run('DELETE FROM subdomains WHERE id = ?', [id]);
   }
 
   getSubdomainCount() {
-    const row = this.db.prepare('SELECT COUNT(*) as count FROM subdomains').get();
-    return row.count;
+    const row = this._get('SELECT COUNT(*) as count FROM subdomains');
+    return row ? row.count : 0;
   }
 
   getSubdomainCountByDomain(domainId) {
-    const row = this.db.prepare('SELECT COUNT(*) as count FROM subdomains WHERE domain_id = ?').get(domainId);
-    return row.count;
+    const row = this._get('SELECT COUNT(*) as count FROM subdomains WHERE domain_id = ?', [domainId]);
+    return row ? row.count : 0;
   }
 
   // ──────────────────────────────────────
@@ -225,28 +287,28 @@ class DB {
   // ──────────────────────────────────────
 
   createUser({ telegram_id, username, first_name, last_name, role, created_by }) {
-    const stmt = this.db.prepare(
+    const result = this._run(
       `INSERT INTO users (telegram_id, username, first_name, last_name, role, created_by)
-       VALUES (?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [telegram_id, username, first_name, last_name, role || 'member', created_by]
     );
-    const result = stmt.run(telegram_id, username, first_name, last_name, role || 'member', created_by);
     return this.getUser(result.lastInsertRowid);
   }
 
   getUser(id) {
-    return this.db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+    return this._get('SELECT * FROM users WHERE id = ?', [id]);
   }
 
   getUserByTelegramId(telegramId) {
-    return this.db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(String(telegramId));
+    return this._get('SELECT * FROM users WHERE telegram_id = ?', [String(telegramId)]);
   }
 
   getAllUsers() {
-    return this.db.prepare('SELECT * FROM users ORDER BY role, created_at').all();
+    return this._all('SELECT * FROM users ORDER BY role, created_at');
   }
 
   getActiveUsers() {
-    return this.db.prepare("SELECT * FROM users WHERE status = 'active' ORDER BY role, created_at").all();
+    return this._all("SELECT * FROM users WHERE status = 'active' ORDER BY role, created_at");
   }
 
   updateUser(telegramId, fields) {
@@ -265,22 +327,22 @@ class DB {
 
     values.push(String(telegramId));
 
-    this.db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE telegram_id = ?`).run(...values);
+    this._run(`UPDATE users SET ${updates.join(', ')} WHERE telegram_id = ?`, values);
     return this.getUserByTelegramId(telegramId);
   }
 
   deleteUser(telegramId) {
-    this.db.prepare('DELETE FROM users WHERE telegram_id = ?').run(String(telegramId));
+    this._run('DELETE FROM users WHERE telegram_id = ?', [String(telegramId)]);
   }
 
   getUserCount() {
-    const row = this.db.prepare('SELECT COUNT(*) as count FROM users').get();
-    return row.count;
+    const row = this._get('SELECT COUNT(*) as count FROM users');
+    return row ? row.count : 0;
   }
 
   getUserDomainCount(telegramId) {
-    const row = this.db.prepare('SELECT COUNT(*) as count FROM domains WHERE created_by = ?').get(String(telegramId));
-    return row.count;
+    const row = this._get('SELECT COUNT(*) as count FROM domains WHERE created_by = ?', [String(telegramId)]);
+    return row ? row.count : 0;
   }
 
   // ──────────────────────────────────────
@@ -288,31 +350,33 @@ class DB {
   // ──────────────────────────────────────
 
   logActivity({ user_telegram_id, action, resource_type, resource_id, details, ip_address, success, error_message }) {
-    const stmt = this.db.prepare(
+    this._run(
       `INSERT INTO activity_logs (user_telegram_id, action, resource_type, resource_id, details, ip_address, success, error_message)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    stmt.run(
-      user_telegram_id, action, resource_type || null, resource_id || null,
-      details || null, ip_address || null, success !== false ? 1 : 0, error_message || null
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        user_telegram_id, action, resource_type || null, resource_id || null,
+        details || null, ip_address || null, success !== false ? 1 : 0, error_message || null,
+      ]
     );
   }
 
   getActivityLogs(limit = 50, offset = 0) {
-    return this.db.prepare(
-      'SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT ? OFFSET ?'
-    ).all(limit, offset);
+    return this._all(
+      'SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT ? OFFSET ?',
+      [limit, offset]
+    );
   }
 
   getActivityLogsByUser(telegramId, limit = 50) {
-    return this.db.prepare(
-      'SELECT * FROM activity_logs WHERE user_telegram_id = ? ORDER BY created_at DESC LIMIT ?'
-    ).all(String(telegramId), limit);
+    return this._all(
+      'SELECT * FROM activity_logs WHERE user_telegram_id = ? ORDER BY created_at DESC LIMIT ?',
+      [String(telegramId), limit]
+    );
   }
 
   getActivityLogCount() {
-    const row = this.db.prepare('SELECT COUNT(*) as count FROM activity_logs').get();
-    return row.count;
+    const row = this._get('SELECT COUNT(*) as count FROM activity_logs');
+    return row ? row.count : 0;
   }
 
   // ──────────────────────────────────────
@@ -323,13 +387,12 @@ class DB {
     const domains = this.getDomainCount();
     const subdomains = this.getSubdomainCount();
     const users = this.getUserCount();
-    const vps = this.db.prepare('SELECT COUNT(*) as count FROM vps').get().count;
-    const activeSsl = this.db.prepare(
-      "SELECT COUNT(*) as count FROM domains WHERE ssl_status = 'active'"
-    ).get().count;
-    const activeSubSsl = this.db.prepare(
-      "SELECT COUNT(*) as count FROM subdomains WHERE ssl_status = 'active'"
-    ).get().count;
+    const vpsRow = this._get('SELECT COUNT(*) as count FROM vps');
+    const vps = vpsRow ? vpsRow.count : 0;
+    const activeSslRow = this._get("SELECT COUNT(*) as count FROM domains WHERE ssl_status = 'active'");
+    const activeSsl = activeSslRow ? activeSslRow.count : 0;
+    const activeSubSslRow = this._get("SELECT COUNT(*) as count FROM subdomains WHERE ssl_status = 'active'");
+    const activeSubSsl = activeSubSslRow ? activeSubSslRow.count : 0;
 
     return {
       domains,

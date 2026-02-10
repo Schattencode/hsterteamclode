@@ -9,15 +9,15 @@
     "setup": "node scripts/setup.js"
   },
   "dependencies": {
-    "node-telegram-bot-api": "^0.64.0",
-    "ssh2": "^1.15.0",
-    "axios": "^1.6.7",
-    "better-sqlite3": "^9.4.0",
     "archiver": "^7.0.0",
-    "unzipper": "^0.11.6",
-    "winston": "^3.11.0",
+    "axios": "^1.6.7",
     "dotenv": "^16.4.1",
-    "mime-types": "^2.1.35"
+    "mime-types": "^2.1.35",
+    "node-telegram-bot-api": "^0.64.0",
+    "sql.js": "^1.13.0",
+    "ssh2": "^1.15.0",
+    "unzipper": "^0.11.6",
+    "winston": "^3.11.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.3"

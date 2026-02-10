@@ -19,7 +19,7 @@ async function main() {
   // Initialize database
   const db = new DB(config.database.path);
   try {
-    db.initialize();
+    await db.initialize();
     logger.info('Database ready');
   } catch (err) {
     logger.error('Database initialization failed', { error: err.message });
