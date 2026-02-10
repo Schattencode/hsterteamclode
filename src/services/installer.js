@@ -87,9 +87,51 @@ class PowerDNSInstaller {
       // Set permissions
       await this.ssh.exec('chown -R pdns:pdns /var/lib/powerdns');
 
+      // Kill anything still on port 53 just in case
+      try {
+        await this.ssh.exec("fuser -k 53/tcp 2>/dev/null; fuser -k 53/udp 2>/dev/null; sleep 1");
+      } catch {
+        // Nothing on port 53, that's fine
+      }
+
       // Enable and start service
       await this.ssh.exec('systemctl enable pdns');
-      await this.ssh.exec('systemctl restart pdns');
+      try {
+        await this.ssh.exec('systemctl restart pdns');
+      } catch (startErr) {
+        // Capture detailed diagnostics
+        let diagnostics = '';
+        try {
+          diagnostics = await this.ssh.exec('journalctl -xeu pdns.service --no-pager -n 30 2>&1');
+        } catch { /* ignore */ }
+        let portInfo = '';
+        try {
+          portInfo = await this.ssh.exec('ss -tlnp | grep :53 2>&1');
+        } catch { /* ignore */ }
+        let configCheck = '';
+        try {
+          configCheck = await this.ssh.exec('cat /etc/powerdns/pdns.conf 2>&1');
+        } catch { /* ignore */ }
+        let schemaCheck = '';
+        try {
+          schemaCheck = await this.ssh.exec('ls -la /usr/share/pdns-backend-sqlite3/schema/ 2>&1');
+        } catch { /* ignore */ }
+        let dbCheck = '';
+        try {
+          dbCheck = await this.ssh.exec('ls -la /var/lib/powerdns/ 2>&1');
+        } catch { /* ignore */ }
+
+        const fullDiag = [
+          `--- journalctl ---\n${diagnostics}`,
+          `--- port 53 ---\n${portInfo}`,
+          `--- pdns.conf ---\n${configCheck}`,
+          `--- schema dir ---\n${schemaCheck}`,
+          `--- db dir ---\n${dbCheck}`,
+        ].join('\n\n');
+
+        logger.error('PowerDNS start failed - diagnostics', { diagnostics: fullDiag });
+        throw new Error(`PowerDNS failed to start.\n\nDiagnostics:\n${diagnostics || 'No journal output'}`);
+      }
 
       // Verify it's running
       await this.ssh.exec('systemctl is-active pdns');
