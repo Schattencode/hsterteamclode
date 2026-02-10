@@ -30,11 +30,11 @@ class VPSManager {
    */
   async _ensureNginx(ssh, progress) {
     try {
-      await ssh.exec('which nginx');
+      await ssh.exec('systemctl status nginx');
     } catch {
-      progress('Installing Nginx (not found on VPS)');
-      const installer = new Installer(ssh);
-      await installer.installNginx();
+      progress('Installing Nginx...');
+      await ssh.exec('apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y nginx', 120000);
+      await ssh.exec('systemctl enable nginx && systemctl start nginx');
     }
     // Always ensure config directories exist
     await ssh.exec('mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled');
