@@ -3,6 +3,7 @@ const nginxConfig = require('./nginx');
 const CloudflareManager = require('./cloudflare');
 const SSLManager = require('./ssl');
 const FileManager = require('./fileManager');
+const Installer = require('./installer');
 const path = require('path');
 const fs = require('fs/promises');
 const logger = require('../utils/logger');
@@ -25,6 +26,19 @@ class VPSManager {
   }
 
   /**
+   * Ensure Nginx is installed on the VPS, auto-install if missing.
+   */
+  async _ensureNginx(ssh, progress) {
+    try {
+      await ssh.exec('which nginx');
+    } catch {
+      progress('Installing Nginx (not found on VPS)');
+      const installer = new Installer(ssh);
+      await installer.installNginx();
+    }
+  }
+
+  /**
    * Deploy a domain: upload files, configure Nginx, DNS, and SSL.
    */
   async deployDomain(domainData, zipFilePath, userTelegramId, progressCallback) {
@@ -43,6 +57,9 @@ class VPSManager {
       // Step 1: Connect
       progress('Connecting to VPS');
       await ssh.connect();
+
+      // Step 1.5: Ensure Nginx is installed
+      await this._ensureNginx(ssh, progress);
 
       // Step 2: Create site directory
       const sitePath = `/var/www/${domain}`;
@@ -189,6 +206,8 @@ class VPSManager {
       progress('Connecting to VPS');
       await ssh.connect();
 
+      await this._ensureNginx(ssh, progress);
+
       const sitePath = `/var/www/${fullDomain}`;
       progress(`Creating directory: ${sitePath}`);
       await ssh.exec(`mkdir -p ${sitePath}`);
@@ -317,7 +336,13 @@ class VPSManager {
       progress('Connecting to VPS');
       await ssh.connect();
 
-      const sitePath = domainRow.site_path;
+      await this._ensureNginx(ssh, progress);
+
+      // Use default path if site_path was never set (first deploy failed)
+      const sitePath = domainRow.site_path || `/var/www/${domainRow.domain}`;
+
+      progress(`Creating directory: ${sitePath}`);
+      await ssh.exec(`mkdir -p ${sitePath}`);
 
       progress('Clearing existing files');
       await ssh.exec(`rm -rf ${sitePath}/*`);
@@ -334,7 +359,33 @@ class VPSManager {
       await ssh.exec(`chown -R www-data:www-data ${sitePath}`);
       await ssh.exec(`chmod -R 755 ${sitePath}`);
 
+      // If nginx config was never created, generate it now
+      if (!domainRow.nginx_config_path) {
+        progress('Generating Nginx configuration');
+        const config = nginxConfig.generateDomainConfig(domainRow.domain, sitePath);
+        const configPath = nginxConfig.getConfigPath(domainRow.domain);
+        const enabledPath = nginxConfig.getEnabledPath(domainRow.domain);
+
+        await fs.mkdir(fileManager.tempDir, { recursive: true });
+        const tempConfig = path.resolve(fileManager.tempDir, `${domainRow.domain}.conf`);
+        await fs.writeFile(tempConfig, config);
+        await ssh.uploadFile(tempConfig, configPath);
+        await fs.unlink(tempConfig);
+
+        await ssh.exec(`ln -sf ${configPath} ${enabledPath}`);
+
+        this.db.updateDomain(domainId, {
+          site_path: sitePath,
+          nginx_config_path: configPath,
+          status: 'active',
+        });
+      } else if (!domainRow.site_path) {
+        // Just update the site_path if it was null
+        this.db.updateDomain(domainId, { site_path: sitePath, status: 'active' });
+      }
+
       progress('Reloading Nginx');
+      await ssh.exec('nginx -t 2>&1');
       await ssh.exec('systemctl reload nginx');
 
       this.db.logActivity({

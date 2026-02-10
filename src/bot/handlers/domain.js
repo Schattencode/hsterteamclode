@@ -419,7 +419,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
       `🔄 <b>Update Site Files: ${domain.domain}</b>\n\n` +
       `Please send a new ZIP archive.\n\n` +
       `⚠️ This will REPLACE all existing files in:\n` +
-      `<code>${domain.site_path}</code>\n\n` +
+      `<code>${domain.site_path || `/var/www/${domain.domain}`}</code>\n\n` +
       `Maximum size: ${config.upload.maxSizeMB} MB`,
       {
         chat_id: chatId,
