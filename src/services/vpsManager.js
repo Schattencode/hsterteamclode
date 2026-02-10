@@ -36,6 +36,8 @@ class VPSManager {
       const installer = new Installer(ssh);
       await installer.installNginx();
     }
+    // Always ensure config directories exist
+    await ssh.exec('mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled');
   }
 
   /**
