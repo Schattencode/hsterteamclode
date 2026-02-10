@@ -54,47 +54,7 @@ class VPSManager {
       progress('Connecting to VPS');
       await ssh.connect();
 
-      // Step 1.5: Ensure all software is installed
-      const { phpSocket } = await this._ensureVPS(ssh, progress);
-
-      // Step 2: Create site directory
-      const sitePath = `/var/www/${domain}`;
-      progress(`Creating directory: ${sitePath}`);
-      await ssh.exec(`mkdir -p ${sitePath}`);
-
-      // Step 3: Extract ZIP
-      progress('Extracting ZIP archive');
-      const extractedPath = await fileManager.extractZip(zipFilePath);
-      const fileCount = await fileManager.countFiles(extractedPath);
-      const totalSize = await fileManager.getDirectorySize(extractedPath);
-
-      // Step 4: Upload files
-      progress(`Uploading ${fileCount} files`);
-      await ssh.uploadDirectory(extractedPath, sitePath);
-
-      // Step 5: Set permissions
-      progress('Setting permissions');
-      await ssh.exec(`chown -R www-data:www-data ${sitePath}`);
-      await ssh.exec(`chmod -R 755 ${sitePath}`);
-
-      // Step 6: Generate Nginx config
-      progress('Generating Nginx configuration');
-      const config = nginxConfig.generateDomainConfig(domain, sitePath, phpSocket);
-      const configPath = nginxConfig.getConfigPath(domain);
-      const enabledPath = nginxConfig.getEnabledPath(domain);
-
-      // Write config to temp file, upload, clean up
-      await fs.mkdir(fileManager.tempDir, { recursive: true });
-      const tempConfig = path.resolve(fileManager.tempDir, `${domain}.conf`);
-      await fs.writeFile(tempConfig, config);
-      await ssh.uploadFile(tempConfig, configPath);
-      await fs.unlink(tempConfig);
-
-      // Step 7: Enable site
-      progress('Activating site configuration');
-      await ssh.exec(`ln -sf ${configPath} ${enabledPath}`);
-
-      // Step 8: Create DNS records via Cloudflare
+      // Step 2: Create DNS records EARLY so they propagate while we work
       progress('Creating DNS records (Cloudflare)');
       try {
         const cf = this._getCloudflare();
@@ -107,14 +67,54 @@ class VPSManager {
         logger.warn('Cloudflare DNS record creation skipped', { error: err.message });
       }
 
-      // Step 9: Test and reload Nginx
+      // Step 3: Ensure all software is installed
+      const { phpSocket } = await this._ensureVPS(ssh, progress);
+
+      // Step 4: Create site directory
+      const sitePath = `/var/www/${domain}`;
+      progress(`Creating directory: ${sitePath}`);
+      await ssh.exec(`mkdir -p ${sitePath}`);
+
+      // Step 5: Extract ZIP
+      progress('Extracting ZIP archive');
+      const extractedPath = await fileManager.extractZip(zipFilePath);
+      const fileCount = await fileManager.countFiles(extractedPath);
+      const totalSize = await fileManager.getDirectorySize(extractedPath);
+
+      // Step 6: Upload files
+      progress(`Uploading ${fileCount} files`);
+      await ssh.uploadDirectory(extractedPath, sitePath);
+
+      // Step 7: Set permissions
+      progress('Setting permissions');
+      await ssh.exec(`chown -R www-data:www-data ${sitePath}`);
+      await ssh.exec(`chmod -R 755 ${sitePath}`);
+
+      // Step 8: Generate Nginx config
+      progress('Generating Nginx configuration');
+      const config = nginxConfig.generateDomainConfig(domain, sitePath, phpSocket);
+      const configPath = nginxConfig.getConfigPath(domain);
+      const enabledPath = nginxConfig.getEnabledPath(domain);
+
+      // Write config to temp file, upload, clean up
+      await fs.mkdir(fileManager.tempDir, { recursive: true });
+      const tempConfig = path.resolve(fileManager.tempDir, `${domain}.conf`);
+      await fs.writeFile(tempConfig, config);
+      await ssh.uploadFile(tempConfig, configPath);
+      await fs.unlink(tempConfig);
+
+      // Step 9: Enable site
+      progress('Activating site configuration');
+      await ssh.exec(`ln -sf ${configPath} ${enabledPath}`);
+
+      // Step 10: Test and reload Nginx
       progress('Testing Nginx configuration');
       await ssh.exec('nginx -t');
 
       progress('Reloading Nginx');
       await ssh.exec('systemctl reload nginx');
 
-      // Step 10: Obtain SSL
+      // Step 11: Obtain SSL (DNS has had time to propagate by now)
       progress('Obtaining SSL certificate');
       let sslResult = { success: false, expiry: null };
       try {
