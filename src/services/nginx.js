@@ -1,21 +1,31 @@
 class NginxConfigGenerator {
   /**
    * Generate Nginx config for a main domain.
-   * Serves both domain.com and www.domain.com.
+   * @param {string} domain
+   * @param {string} sitePath
+   * @param {string} phpSocket - e.g. /var/run/php/php8.3-fpm.sock
    */
-  generateDomainConfig(domain, sitePath) {
+  generateDomainConfig(domain, sitePath, phpSocket) {
+    const sock = phpSocket || '/var/run/php/php8.1-fpm.sock';
     return `server {
     listen 80;
     server_name ${domain} www.${domain};
 
     root ${sitePath};
-    index index.html index.htm;
+    index index.php index.html index.htm;
 
     access_log /var/log/nginx/${domain}-access.log;
     error_log /var/log/nginx/${domain}-error.log;
 
     location / {
-        try_files $uri $uri/ /index.html =404;
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \\.php$ {
+        fastcgi_pass unix:${sock};
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_index index.php;
     }
 
     location ~ /\\.ht {
@@ -34,21 +44,31 @@ class NginxConfigGenerator {
 
   /**
    * Generate Nginx config for a subdomain.
-   * Only serves the exact subdomain hostname.
+   * @param {string} fullDomain
+   * @param {string} sitePath
+   * @param {string} phpSocket
    */
-  generateSubdomainConfig(fullDomain, sitePath) {
+  generateSubdomainConfig(fullDomain, sitePath, phpSocket) {
+    const sock = phpSocket || '/var/run/php/php8.1-fpm.sock';
     return `server {
     listen 80;
     server_name ${fullDomain};
 
     root ${sitePath};
-    index index.html index.htm;
+    index index.php index.html index.htm;
 
     access_log /var/log/nginx/${fullDomain}-access.log;
     error_log /var/log/nginx/${fullDomain}-error.log;
 
     location / {
-        try_files $uri $uri/ /index.html =404;
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \\.php$ {
+        fastcgi_pass unix:${sock};
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_index index.php;
     }
 
     location ~ /\\.ht {

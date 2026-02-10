@@ -404,22 +404,35 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
 
     const vps = db.getVPS(state.vpsId);
 
-    await bot.editMessageText(
+    const msgId = query.message.message_id;
+
+    const updateMsg = async (text) => {
+      try {
+        await bot.editMessageText(text, { chat_id: chatId, message_id: msgId, parse_mode: 'HTML' });
+      } catch { /* ignore edit errors */ }
+    };
+
+    await updateMsg(
       `📦 <b>Setting up ${vps.name}...</b>\n\n` +
-      `Installing Nginx web server...\n\n` +
-      `⏳ This may take 1-2 minutes...`,
-      { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'HTML' }
+      `⏳ Installing web server stack...\n` +
+      `This may take 3-5 minutes...`
     );
 
     try {
       const SSHManager = require('../../services/ssh');
-      const PowerDNSInstaller = require('../../services/installer');
+      const VPSInstaller = require('../../services/installer');
 
       const ssh = new SSHManager(vps);
       await ssh.connect();
 
-      const installer = new PowerDNSInstaller(ssh);
-      await installer.installNginx();
+      const installer = new VPSInstaller(ssh);
+      const result = await installer.provisionWebServer(async (step) => {
+        await updateMsg(
+          `📦 <b>Setting up ${vps.name}...</b>\n\n` +
+          `⚙️ ${step}...\n\n` +
+          `⏳ Please wait...`
+        );
+      });
 
       ssh.disconnect();
 
@@ -434,22 +447,25 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
         `🌐 IP: ${vps.ip}\n` +
         `🔐 SSH: Connected\n` +
         `🌍 Nginx: Installed\n` +
+        `🐘 PHP: ${result.phpVersion}-FPM\n` +
+        `🔒 Certbot: Installed\n` +
         `☁️ Cloudflare: ${cfStatus}\n\n` +
         `You can now add domains!`;
 
       await bot.editMessageText(text, {
         chat_id: chatId,
-        message_id: query.message.message_id,
+        message_id: msgId,
         parse_mode: 'HTML',
         ...menus.afterVPSSetup(state.vpsId),
       });
     } catch (err) {
-      logger.error('Nginx installation failed', { error: err.message });
+      logger.error('VPS provisioning failed', { error: err.message });
+      const shortErr = err.message.length > 300 ? err.message.slice(0, 300) + '...' : err.message;
       await bot.editMessageText(
-        `❌ Nginx installation failed:\n${err.message}`,
+        `❌ VPS setup failed:\n${shortErr}`,
         {
           chat_id: chatId,
-          message_id: query.message.message_id,
+          message_id: msgId,
           ...menus.backToMain(),
         }
       );

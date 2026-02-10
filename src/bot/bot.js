@@ -151,7 +151,7 @@ function createBot(db, config) {
           {
             reply_markup: {
               inline_keyboard: [
-                [{ text: '✅ Install Nginx', callback_data: 'vps_install_nginx' }],
+                [{ text: '✅ Setup Web Server (Nginx + PHP + SSL)', callback_data: 'vps_install_nginx' }],
                 [{ text: '❌ Cancel', callback_data: 'cancel' }],
               ],
             },
@@ -221,7 +221,7 @@ function createBot(db, config) {
           {
             reply_markup: {
               inline_keyboard: [
-                [{ text: '✅ Install Nginx', callback_data: 'vps_install_nginx' }],
+                [{ text: '✅ Setup Web Server (Nginx + PHP + SSL)', callback_data: 'vps_install_nginx' }],
                 [{ text: '❌ Cancel', callback_data: 'cancel' }],
               ],
             },
@@ -722,7 +722,7 @@ function createBot(db, config) {
         {
           reply_markup: {
             inline_keyboard: [
-              [{ text: '✅ Install Nginx', callback_data: 'vps_install_nginx' }],
+              [{ text: '✅ Setup Web Server (Nginx + PHP + SSL)', callback_data: 'vps_install_nginx' }],
               [{ text: '❌ Cancel', callback_data: 'cancel' }],
             ],
           },

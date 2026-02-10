@@ -26,27 +26,12 @@ class VPSManager {
   }
 
   /**
-   * Ensure Nginx is installed on the VPS, auto-install if missing.
+   * Ensure all required software is installed on VPS (nginx, php-fpm, certbot).
+   * Returns { phpSocket } for nginx config generation.
    */
-  async _ensureNginx(ssh, progress) {
-    try {
-      await ssh.exec('systemctl status nginx');
-    } catch {
-      progress('Installing Nginx...');
-      await ssh.exec('apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y nginx', 120000);
-      await ssh.exec('systemctl enable nginx && systemctl start nginx');
-    }
-    // Always ensure config directories exist
-    await ssh.exec('mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled');
-    // Ensure nginx.conf includes sites-enabled
-    try {
-      const conf = await ssh.exec('cat /etc/nginx/nginx.conf');
-      if (!conf.includes('sites-enabled')) {
-        await ssh.exec(`sed -i '/http {/a \\    include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf`);
-      }
-    } catch { /* ignore */ }
-    // Remove default site to avoid conflicts
-    await ssh.exec('rm -f /etc/nginx/sites-enabled/default').catch(() => {});
+  async _ensureVPS(ssh, progress) {
+    const installer = new Installer(ssh);
+    return await installer.ensureReady(progress);
   }
 
   /**
@@ -69,8 +54,8 @@ class VPSManager {
       progress('Connecting to VPS');
       await ssh.connect();
 
-      // Step 1.5: Ensure Nginx is installed
-      await this._ensureNginx(ssh, progress);
+      // Step 1.5: Ensure all software is installed
+      const { phpSocket } = await this._ensureVPS(ssh, progress);
 
       // Step 2: Create site directory
       const sitePath = `/var/www/${domain}`;
@@ -94,7 +79,7 @@ class VPSManager {
 
       // Step 6: Generate Nginx config
       progress('Generating Nginx configuration');
-      const config = nginxConfig.generateDomainConfig(domain, sitePath);
+      const config = nginxConfig.generateDomainConfig(domain, sitePath, phpSocket);
       const configPath = nginxConfig.getConfigPath(domain);
       const enabledPath = nginxConfig.getEnabledPath(domain);
 
@@ -217,7 +202,7 @@ class VPSManager {
       progress('Connecting to VPS');
       await ssh.connect();
 
-      await this._ensureNginx(ssh, progress);
+      const { phpSocket } = await this._ensureVPS(ssh, progress);
 
       const sitePath = `/var/www/${fullDomain}`;
       progress(`Creating directory: ${sitePath}`);
@@ -236,7 +221,7 @@ class VPSManager {
       await ssh.exec(`chmod -R 755 ${sitePath}`);
 
       progress('Generating Nginx configuration');
-      const config = nginxConfig.generateSubdomainConfig(fullDomain, sitePath);
+      const config = nginxConfig.generateSubdomainConfig(fullDomain, sitePath, phpSocket);
       const configPath = nginxConfig.getConfigPath(fullDomain);
       const enabledPath = nginxConfig.getEnabledPath(fullDomain);
 
@@ -347,7 +332,7 @@ class VPSManager {
       progress('Connecting to VPS');
       await ssh.connect();
 
-      await this._ensureNginx(ssh, progress);
+      const { phpSocket } = await this._ensureVPS(ssh, progress);
 
       // Use default path if site_path was never set (first deploy failed)
       const sitePath = domainRow.site_path || `/var/www/${domainRow.domain}`;
@@ -372,7 +357,7 @@ class VPSManager {
 
       // Always regenerate and upload Nginx config to ensure it's up to date
       progress('Generating Nginx configuration');
-      const config = nginxConfig.generateDomainConfig(domainRow.domain, sitePath);
+      const config = nginxConfig.generateDomainConfig(domainRow.domain, sitePath, phpSocket);
       const configPath = nginxConfig.getConfigPath(domainRow.domain);
       const enabledPath = nginxConfig.getEnabledPath(domainRow.domain);
 

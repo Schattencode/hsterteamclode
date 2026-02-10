@@ -1,189 +1,206 @@
-const crypto = require('crypto');
-const fs = require('fs/promises');
 const logger = require('../utils/logger');
 
-class PowerDNSInstaller {
+class VPSInstaller {
   constructor(sshManager) {
     this.ssh = sshManager;
   }
 
   /**
-   * Install and configure PowerDNS on the remote VPS.
+   * Full VPS provisioning: Nginx + PHP-FPM + Certbot + firewall.
+   * Returns an object with installed component details.
    */
-  async install() {
+  async provisionWebServer(progressCallback) {
+    const progress = progressCallback || (() => {});
+
+    // Step 1: Update packages
+    progress('Updating package lists');
+    await this.ssh.exec('apt-get update', 120000);
+
+    // Step 2: Install Nginx
+    progress('Installing Nginx');
+    await this.ssh.exec(
+      'DEBIAN_FRONTEND=noninteractive apt-get install -y nginx',
+      180000
+    );
+    await this.ssh.exec('systemctl enable nginx && systemctl start nginx');
+
+    // Step 3: Install PHP-FPM + common extensions
+    progress('Installing PHP-FPM');
+    // Detect available PHP version (8.3, 8.2, 8.1, etc.)
+    let phpVersion;
     try {
-      // Free port 53: stop and disable systemd-resolved (occupies port 53 on modern Ubuntu/Debian)
-      try {
-        await this.ssh.exec('systemctl stop systemd-resolved');
-        await this.ssh.exec('systemctl disable systemd-resolved');
-        logger.info('systemd-resolved stopped and disabled');
-      } catch {
-        // systemd-resolved may not be present on all systems
-      }
-
-      // Set up manual DNS resolution (since systemd-resolved is now disabled)
-      try {
-        // Remove symlink if /etc/resolv.conf points to systemd stub
-        await this.ssh.exec('rm -f /etc/resolv.conf');
-        await this.ssh.exec(`cat > /etc/resolv.conf << 'EOF'\nnameserver 8.8.8.8\nnameserver 1.1.1.1\nnameserver 8.8.4.4\nEOF`);
-        logger.info('Manual /etc/resolv.conf configured');
-      } catch (e) {
-        logger.warn('Could not update resolv.conf', { error: e.message });
-      }
-
-      // Update package lists
-      await this.ssh.exec('apt-get update', 120000);
-
-      // Install PowerDNS and SQLite3 backend
-      await this.ssh.exec(
-        'DEBIAN_FRONTEND=noninteractive apt-get install -y pdns-server pdns-backend-sqlite3 sqlite3',
-        180000
+      const versions = await this.ssh.exec(
+        'apt-cache search --names-only "^php[0-9.]+-fpm$" | sort -rV | head -1'
       );
-
-      // Generate random API key
-      const apiKey = this.generateAPIKey();
-
-      // Stop service before reconfiguring
-      try {
-        await this.ssh.exec('systemctl stop pdns');
-      } catch {
-        // May not be running yet
-      }
-
-      // Write PowerDNS configuration (compatible with PowerDNS 4.5+)
-      const config = [
-        'launch=gsqlite3',
-        'gsqlite3-database=/var/lib/powerdns/pdns.sqlite3',
-        '',
-        'local-address=0.0.0.0',
-        'local-port=53',
-        '',
-        'webserver=yes',
-        'webserver-address=127.0.0.1',
-        'webserver-port=8081',
-        'webserver-allow-from=127.0.0.1',
-        '',
-        'api=yes',
-        `api-key=${apiKey}`,
-        '',
-        'default-ttl=3600',
-      ].join('\n');
-
-      // Write config via echo (avoid needing to upload)
-      await this.ssh.exec(`cat > /etc/powerdns/pdns.conf << 'PDNSEOF'\n${config}\nPDNSEOF`);
-
-      // Initialize SQLite database for PowerDNS
-      await this.ssh.exec('mkdir -p /var/lib/powerdns');
-
-      // Remove existing DB if present to avoid schema conflicts
-      await this.ssh.exec('rm -f /var/lib/powerdns/pdns.sqlite3');
-
-      // Create schema
-      await this.ssh.exec(
-        'sqlite3 /var/lib/powerdns/pdns.sqlite3 < /usr/share/pdns-backend-sqlite3/schema/schema.sqlite3.sql'
-      );
-
-      // Set permissions
-      await this.ssh.exec('chown -R pdns:pdns /var/lib/powerdns');
-
-      // Kill anything still on port 53 just in case
-      try {
-        await this.ssh.exec("fuser -k 53/tcp 2>/dev/null; fuser -k 53/udp 2>/dev/null; sleep 1");
-      } catch {
-        // Nothing on port 53, that's fine
-      }
-
-      // Enable and start service
-      await this.ssh.exec('systemctl enable pdns');
-      try {
-        await this.ssh.exec('systemctl restart pdns');
-      } catch (startErr) {
-        // Capture detailed diagnostics
-        let diagnostics = '';
-        try {
-          diagnostics = await this.ssh.exec('journalctl -xeu pdns.service --no-pager -n 30 2>&1');
-        } catch { /* ignore */ }
-        let portInfo = '';
-        try {
-          portInfo = await this.ssh.exec('ss -tlnp | grep :53 2>&1');
-        } catch { /* ignore */ }
-        let configCheck = '';
-        try {
-          configCheck = await this.ssh.exec('cat /etc/powerdns/pdns.conf 2>&1');
-        } catch { /* ignore */ }
-        let schemaCheck = '';
-        try {
-          schemaCheck = await this.ssh.exec('ls -la /usr/share/pdns-backend-sqlite3/schema/ 2>&1');
-        } catch { /* ignore */ }
-        let dbCheck = '';
-        try {
-          dbCheck = await this.ssh.exec('ls -la /var/lib/powerdns/ 2>&1');
-        } catch { /* ignore */ }
-
-        const fullDiag = [
-          `--- journalctl ---\n${diagnostics}`,
-          `--- port 53 ---\n${portInfo}`,
-          `--- pdns.conf ---\n${configCheck}`,
-          `--- schema dir ---\n${schemaCheck}`,
-          `--- db dir ---\n${dbCheck}`,
-        ].join('\n\n');
-
-        logger.error('PowerDNS start failed - diagnostics', { diagnostics: fullDiag });
-        // Extract key error line from journalctl for a concise message
-        const fatalLine = diagnostics.split('\n').find(l => l.includes('Fatal error')) || '';
-        const shortDiag = fatalLine || diagnostics.slice(0, 500) || 'No journal output';
-        throw new Error(`PowerDNS failed to start: ${shortDiag}`);
-      }
-
-      // Verify it's running
-      await this.ssh.exec('systemctl is-active pdns');
-
-      logger.info('PowerDNS installed successfully');
-
-      return {
-        success: true,
-        apiKey,
-        message: 'PowerDNS installed and configured successfully',
-      };
-    } catch (error) {
-      logger.error('PowerDNS installation failed', { error: error.message });
-      throw new Error(`PowerDNS installation failed: ${error.message}`);
+      // e.g. "php8.3-fpm - server-side, HTML-embedded scripting language (FPM-CGI binary)"
+      const match = versions.match(/php([\d.]+)-fpm/);
+      phpVersion = match ? match[1] : '8.1';
+    } catch {
+      phpVersion = '8.1';
     }
+
+    const phpPackages = [
+      `php${phpVersion}-fpm`,
+      `php${phpVersion}-cli`,
+      `php${phpVersion}-common`,
+      `php${phpVersion}-mysql`,
+      `php${phpVersion}-xml`,
+      `php${phpVersion}-curl`,
+      `php${phpVersion}-mbstring`,
+      `php${phpVersion}-zip`,
+      `php${phpVersion}-gd`,
+      `php${phpVersion}-intl`,
+      `php${phpVersion}-bcmath`,
+    ].join(' ');
+
+    await this.ssh.exec(
+      `DEBIAN_FRONTEND=noninteractive apt-get install -y ${phpPackages}`,
+      300000
+    );
+    await this.ssh.exec(`systemctl enable php${phpVersion}-fpm && systemctl start php${phpVersion}-fpm`);
+
+    // Step 4: Install Certbot
+    progress('Installing Certbot (SSL)');
+    await this.ssh.exec(
+      'DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx',
+      180000
+    );
+
+    // Step 5: Install useful tools
+    progress('Installing utilities');
+    await this.ssh.exec(
+      'DEBIAN_FRONTEND=noninteractive apt-get install -y unzip curl wget',
+      60000
+    );
+
+    // Step 6: Configure Nginx directories
+    progress('Configuring Nginx');
+    await this.ssh.exec('mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled');
+
+    // Ensure nginx.conf includes sites-enabled
+    try {
+      const conf = await this.ssh.exec('cat /etc/nginx/nginx.conf');
+      if (!conf.includes('sites-enabled')) {
+        await this.ssh.exec(
+          `sed -i '/http {/a \\    include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf`
+        );
+      }
+    } catch { /* ignore */ }
+
+    // Remove default site
+    await this.ssh.exec('rm -f /etc/nginx/sites-enabled/default').catch(() => {});
+
+    // Step 7: Configure firewall (allow HTTP, HTTPS, SSH)
+    progress('Configuring firewall');
+    try {
+      await this.ssh.exec('which ufw');
+      await this.ssh.exec('ufw allow 22/tcp');
+      await this.ssh.exec('ufw allow 80/tcp');
+      await this.ssh.exec('ufw allow 443/tcp');
+      await this.ssh.exec('echo "y" | ufw enable').catch(() => {});
+    } catch {
+      // ufw not available, skip firewall setup
+    }
+
+    // Step 8: Reload Nginx
+    progress('Restarting services');
+    await this.ssh.exec('systemctl restart nginx');
+    await this.ssh.exec(`systemctl restart php${phpVersion}-fpm`);
+
+    // Detect PHP-FPM socket path
+    let phpSocket;
+    try {
+      phpSocket = await this.ssh.exec(
+        `find /var/run/php/ -name "php*-fpm.sock" | head -1`
+      );
+      phpSocket = phpSocket.trim();
+    } catch {
+      phpSocket = `/var/run/php/php${phpVersion}-fpm.sock`;
+    }
+
+    logger.info('VPS provisioned successfully', { phpVersion, phpSocket });
+
+    return {
+      success: true,
+      phpVersion,
+      phpSocket,
+      components: ['nginx', `php${phpVersion}-fpm`, 'certbot', 'ufw'],
+    };
   }
 
   /**
-   * Check if PowerDNS is already installed and running.
+   * Quick check + install of missing components during deploy.
+   * Much faster than full provision - only installs what's missing.
    */
-  async isInstalled() {
-    try {
-      await this.ssh.exec('which pdns_server');
-      await this.ssh.exec('systemctl is-active pdns');
-      return true;
-    } catch {
-      return false;
-    }
-  }
+  async ensureReady(progress) {
+    const p = progress || (() => {});
 
-  /**
-   * Install Nginx if not present.
-   */
-  async installNginx() {
+    // Check Nginx
     try {
-      await this.ssh.exec('which nginx');
-      logger.info('Nginx already installed');
+      await this.ssh.exec('systemctl is-active nginx');
     } catch {
-      logger.info('Installing Nginx');
-      await this.ssh.exec('apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y nginx', 120000);
+      p('Installing Nginx...');
+      await this.ssh.exec('apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y nginx', 180000);
       await this.ssh.exec('systemctl enable nginx && systemctl start nginx');
     }
-  }
 
-  /**
-   * Generate a random API key for PowerDNS.
-   */
-  generateAPIKey() {
-    return crypto.randomBytes(32).toString('hex');
+    // Ensure directories
+    await this.ssh.exec('mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled');
+
+    // Ensure nginx.conf includes sites-enabled
+    try {
+      const conf = await this.ssh.exec('cat /etc/nginx/nginx.conf');
+      if (!conf.includes('sites-enabled')) {
+        await this.ssh.exec(
+          `sed -i '/http {/a \\    include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf`
+        );
+      }
+    } catch { /* ignore */ }
+
+    // Remove default site
+    await this.ssh.exec('rm -f /etc/nginx/sites-enabled/default').catch(() => {});
+
+    // Check PHP-FPM
+    try {
+      await this.ssh.exec('ls /var/run/php/php*-fpm.sock');
+    } catch {
+      p('Installing PHP-FPM...');
+      let phpVersion = '8.1';
+      try {
+        const versions = await this.ssh.exec(
+          'apt-cache search --names-only "^php[0-9.]+-fpm$" | sort -rV | head -1'
+        );
+        const match = versions.match(/php([\d.]+)-fpm/);
+        if (match) phpVersion = match[1];
+      } catch { /* use default */ }
+      await this.ssh.exec(
+        `DEBIAN_FRONTEND=noninteractive apt-get install -y php${phpVersion}-fpm php${phpVersion}-cli php${phpVersion}-common php${phpVersion}-mysql php${phpVersion}-xml php${phpVersion}-curl php${phpVersion}-mbstring php${phpVersion}-zip php${phpVersion}-gd`,
+        300000
+      );
+      await this.ssh.exec(`systemctl enable php${phpVersion}-fpm && systemctl start php${phpVersion}-fpm`);
+    }
+
+    // Check certbot
+    try {
+      await this.ssh.exec('certbot --version');
+    } catch {
+      p('Installing Certbot...');
+      await this.ssh.exec(
+        'DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx',
+        180000
+      );
+    }
+
+    // Detect PHP-FPM socket
+    let phpSocket;
+    try {
+      phpSocket = (await this.ssh.exec('find /var/run/php/ -name "php*-fpm.sock" | head -1')).trim();
+    } catch {
+      phpSocket = '/var/run/php/php8.1-fpm.sock';
+    }
+
+    return { phpSocket };
   }
 }
 
-module.exports = PowerDNSInstaller;
+module.exports = VPSInstaller;
