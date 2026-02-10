@@ -71,7 +71,8 @@ class VPSManager {
       const enabledPath = nginxConfig.getEnabledPath(domain);
 
       // Write config to temp file, upload, clean up
-      const tempConfig = path.join(fileManager.tempDir, `${domain}.conf`);
+      await fs.mkdir(fileManager.tempDir, { recursive: true });
+      const tempConfig = path.resolve(fileManager.tempDir, `${domain}.conf`);
       await fs.writeFile(tempConfig, config);
       await ssh.uploadFile(tempConfig, configPath);
       await fs.unlink(tempConfig);
@@ -209,7 +210,8 @@ class VPSManager {
       const configPath = nginxConfig.getConfigPath(fullDomain);
       const enabledPath = nginxConfig.getEnabledPath(fullDomain);
 
-      const tempConfig = path.join(fileManager.tempDir, `${fullDomain}.conf`);
+      await fs.mkdir(fileManager.tempDir, { recursive: true });
+      const tempConfig = path.resolve(fileManager.tempDir, `${fullDomain}.conf`);
       await fs.writeFile(tempConfig, config);
       await ssh.uploadFile(tempConfig, configPath);
       await fs.unlink(tempConfig);
