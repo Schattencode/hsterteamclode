@@ -50,7 +50,7 @@ class PowerDNSInstaller {
         // May not be running yet
       }
 
-      // Write PowerDNS configuration
+      // Write PowerDNS configuration (compatible with PowerDNS 4.5+)
       const config = [
         'launch=gsqlite3',
         'gsqlite3-database=/var/lib/powerdns/pdns.sqlite3',
@@ -66,7 +66,6 @@ class PowerDNSInstaller {
         'api=yes',
         `api-key=${apiKey}`,
         '',
-        'soa-minimum-ttl=3600',
         'default-ttl=3600',
       ].join('\n');
 
@@ -130,7 +129,10 @@ class PowerDNSInstaller {
         ].join('\n\n');
 
         logger.error('PowerDNS start failed - diagnostics', { diagnostics: fullDiag });
-        throw new Error(`PowerDNS failed to start.\n\nDiagnostics:\n${diagnostics || 'No journal output'}`);
+        // Extract key error line from journalctl for a concise message
+        const fatalLine = diagnostics.split('\n').find(l => l.includes('Fatal error')) || '';
+        const shortDiag = fatalLine || diagnostics.slice(0, 500) || 'No journal output';
+        throw new Error(`PowerDNS failed to start: ${shortDiag}`);
       }
 
       // Verify it's running
