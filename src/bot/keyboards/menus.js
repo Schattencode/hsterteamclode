@@ -146,6 +146,18 @@ function adminTeam() {
   };
 }
 
+function vpsAuthType() {
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '🔑 Password (Recommended)', callback_data: 'vps_auth_password' }],
+        [{ text: '🔐 SSH Key', callback_data: 'vps_auth_key' }],
+        [{ text: '❌ Cancel', callback_data: 'cancel' }],
+      ],
+    },
+  };
+}
+
 function vpsInstallDNS() {
   return {
     reply_markup: {
@@ -222,6 +234,7 @@ module.exports = {
   adminPanel,
   adminVPS,
   adminTeam,
+  vpsAuthType,
   vpsInstallDNS,
   afterVPSSetup,
   teamRoleSelect,

@@ -96,10 +96,10 @@ class DB {
   // VPS Operations
   // ──────────────────────────────────────
 
-  createVPS({ name, ip, ssh_user, ssh_key_path, ssh_port }) {
+  createVPS({ name, ip, ssh_user, ssh_auth_type, ssh_key_path, ssh_password, ssh_port }) {
     const result = this._run(
-      `INSERT INTO vps (name, ip, ssh_user, ssh_key_path, ssh_port) VALUES (?, ?, ?, ?, ?)`,
-      [name, ip, ssh_user || 'root', ssh_key_path, ssh_port || 22]
+      `INSERT INTO vps (name, ip, ssh_user, ssh_auth_type, ssh_key_path, ssh_password, ssh_port) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [name, ip, ssh_user || 'root', ssh_auth_type || 'password', ssh_key_path || null, ssh_password || null, ssh_port || 22]
     );
     return this.getVPS(result.lastInsertRowid);
   }
@@ -121,7 +121,7 @@ class DB {
   }
 
   updateVPS(id, fields) {
-    const allowed = ['name', 'ip', 'ssh_user', 'ssh_key_path', 'ssh_port', 'dns_configured', 'status'];
+    const allowed = ['name', 'ip', 'ssh_user', 'ssh_auth_type', 'ssh_key_path', 'ssh_password', 'ssh_port', 'dns_configured', 'status'];
     const updates = [];
     const values = [];
 

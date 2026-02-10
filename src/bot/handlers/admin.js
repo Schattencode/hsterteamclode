@@ -83,9 +83,64 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
     bot._userStates[query.from.id] = { step: 'vps_enter_name' };
 
     await bot.editMessageText(
-      `📝 <b>VPS Setup — Step 1/4</b>\n\n` +
+      `📝 <b>VPS Setup — Step 1/5</b>\n\n` +
       `Please enter a name for this VPS:\n` +
       `Example: Main Server, Production, Staging`,
+      {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+        parse_mode: 'HTML',
+        ...menus.cancelButton(),
+      }
+    );
+  });
+
+  // ────────────────────────────────────────────
+  // VPS Auth Type — Password
+  // ────────────────────────────────────────────
+  bot.on('callback_query', async (query) => {
+    if (query.data !== 'vps_auth_password') return;
+
+    const chatId = query.message.chat.id;
+    await bot.answerCallbackQuery(query.id);
+
+    const state = (bot._userStates || {})[query.from.id];
+    if (!state || state.step !== 'vps_select_auth') return;
+
+    state.step = 'vps_enter_password';
+    state.authType = 'password';
+
+    await bot.editMessageText(
+      `🔑 <b>VPS Setup — Enter Password</b>\n\n` +
+      `Please enter the SSH password for <b>${state.vpsUser}@${state.vpsIP}</b>:`,
+      {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+        parse_mode: 'HTML',
+        ...menus.cancelButton(),
+      }
+    );
+  });
+
+  // ────────────────────────────────────────────
+  // VPS Auth Type — SSH Key
+  // ────────────────────────────────────────────
+  bot.on('callback_query', async (query) => {
+    if (query.data !== 'vps_auth_key') return;
+
+    const chatId = query.message.chat.id;
+    await bot.answerCallbackQuery(query.id);
+
+    const state = (bot._userStates || {})[query.from.id];
+    if (!state || state.step !== 'vps_select_auth') return;
+
+    state.step = 'vps_enter_key_path';
+    state.authType = 'key';
+
+    await bot.editMessageText(
+      `🔐 <b>VPS Setup — SSH Key</b>\n\n` +
+      `Please send the absolute path to your SSH private key on the bot server:\n\n` +
+      `Example: /root/.ssh/id_rsa`,
       {
         chat_id: chatId,
         message_id: query.message.message_id,
@@ -181,10 +236,13 @@ function registerAdminHandlers(bot, db, auth, activityLogger, config) {
 
     const domainCount = db.getVPSDomainCount(vpsId);
 
+    const authIcon = vps.ssh_auth_type === 'key' ? '🔐 SSH Key' : '🔑 Password';
+
     const text =
       `🖥️ <b>VPS: ${vps.name}</b>\n\n` +
       `🌐 IP: ${vps.ip}\n` +
       `👤 SSH User: ${vps.ssh_user}\n` +
+      `🔒 Auth: ${authIcon}\n` +
       `🔑 SSH Port: ${vps.ssh_port}\n` +
       `🌍 DNS: ${vps.dns_configured ? '✅ Configured' : '❌ Not configured'}\n` +
       `📊 Status: ${vps.status}\n` +

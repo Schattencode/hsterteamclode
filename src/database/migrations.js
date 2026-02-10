@@ -5,7 +5,9 @@ CREATE TABLE IF NOT EXISTS vps (
   name TEXT NOT NULL,
   ip TEXT NOT NULL UNIQUE,
   ssh_user TEXT NOT NULL DEFAULT 'root',
-  ssh_key_path TEXT NOT NULL,
+  ssh_auth_type TEXT NOT NULL DEFAULT 'password',
+  ssh_key_path TEXT,
+  ssh_password TEXT,
   ssh_port INTEGER DEFAULT 22,
   dns_configured BOOLEAN DEFAULT 0,
   status TEXT DEFAULT 'active',
@@ -89,6 +91,22 @@ function runMigrations(db) {
   // sql.js uses db.run() for pragmas (no .pragma() method)
   db.run('PRAGMA foreign_keys = ON');
   db.exec(SCHEMA);
+
+  // Migration: add ssh_auth_type and ssh_password columns if missing (for existing databases)
+  try {
+    const cols = db.exec("PRAGMA table_info(vps)");
+    if (cols.length > 0) {
+      const colNames = cols[0].values.map(row => row[1]);
+      if (!colNames.includes('ssh_auth_type')) {
+        db.run("ALTER TABLE vps ADD COLUMN ssh_auth_type TEXT NOT NULL DEFAULT 'password'");
+      }
+      if (!colNames.includes('ssh_password')) {
+        db.run("ALTER TABLE vps ADD COLUMN ssh_password TEXT");
+      }
+    }
+  } catch {
+    // Columns already exist or fresh database
+  }
 }
 
 module.exports = { runMigrations };

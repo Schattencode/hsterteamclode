@@ -16,23 +16,26 @@ class SSHManager {
     return new Promise((resolve, reject) => {
       this.client = new Client();
 
-      const keyPath = this.vpsConfig.ssh_key_path;
-      let privateKey;
-
-      try {
-        privateKey = fs.readFileSync(keyPath);
-      } catch (err) {
-        return reject(new Error(`Cannot read SSH key at ${keyPath}: ${err.message}`));
-      }
-
       const connectConfig = {
         host: this.vpsConfig.ip,
         port: this.vpsConfig.ssh_port || 22,
         username: this.vpsConfig.ssh_user || 'root',
-        privateKey,
         readyTimeout: 30000,
         keepaliveInterval: 10000,
       };
+
+      // Support both password and key authentication
+      if (this.vpsConfig.ssh_auth_type === 'key' && this.vpsConfig.ssh_key_path) {
+        try {
+          connectConfig.privateKey = fs.readFileSync(this.vpsConfig.ssh_key_path);
+        } catch (err) {
+          return reject(new Error(`Cannot read SSH key at ${this.vpsConfig.ssh_key_path}: ${err.message}`));
+        }
+      } else if (this.vpsConfig.ssh_password) {
+        connectConfig.password = this.vpsConfig.ssh_password;
+      } else {
+        return reject(new Error('No SSH credentials configured (need password or key)'));
+      }
 
       this.client.on('ready', () => {
         this.connected = true;

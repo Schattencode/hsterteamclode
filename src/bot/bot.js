@@ -68,7 +68,7 @@ function createBot(db, config) {
         state.vpsName = text;
         state.step = 'vps_enter_ip';
         return bot.sendMessage(chatId,
-          `✅ VPS Name: ${esc(text)}\n\n📝 Step 2/4\nPlease enter the IP address of your VPS:\nExample: 123.45.67.89`,
+          `✅ VPS Name: ${esc(text)}\n\n📝 Step 2/5\nPlease enter the IP address of your VPS:\nExample: 123.45.67.89`,
           menus.cancelButton()
         );
       }
@@ -85,20 +85,74 @@ function createBot(db, config) {
         state.vpsIP = text;
         state.step = 'vps_enter_user';
         return bot.sendMessage(chatId,
-          `✅ IP Address: ${text}\n\n📝 Step 3/4\nPlease enter SSH username (usually 'root'):`,
+          `✅ IP Address: ${text}\n\n📝 Step 3/5\nPlease enter SSH username (usually 'root'):`,
           menus.cancelButton()
         );
       }
 
       if (state.step === 'vps_enter_user') {
         state.vpsUser = text;
-        state.step = 'vps_enter_key_path';
+        state.step = 'vps_select_auth';
         return bot.sendMessage(chatId,
-          `✅ SSH User: ${esc(text)}\n\n📝 Step 4/4\nPlease send the absolute path to your SSH private key on the bot server:\n\nExample: /root/.ssh/id_rsa`,
-          menus.cancelButton()
+          `✅ SSH User: ${esc(text)}\n\n📝 Step 4/5\nHow do you want to authenticate?`,
+          menus.vpsAuthType()
         );
       }
 
+      // Password input step
+      if (state.step === 'vps_enter_password') {
+        state.vpsPassword = text;
+
+        await bot.sendMessage(chatId, '🔍 Testing SSH connection...');
+
+        const SSHManager = require('../services/ssh');
+        const ssh = new SSHManager({
+          ip: state.vpsIP,
+          ssh_port: 22,
+          ssh_user: state.vpsUser,
+          ssh_auth_type: 'password',
+          ssh_password: text,
+        });
+
+        const testResult = await ssh.testConnection();
+        ssh.disconnect();
+
+        if (!testResult.success) {
+          return bot.sendMessage(chatId,
+            `❌ SSH connection failed:\n${testResult.error}\n\nCheck password and try again:`,
+            menus.cancelButton()
+          );
+        }
+
+        const vps = db.createVPS({
+          name: state.vpsName,
+          ip: state.vpsIP,
+          ssh_user: state.vpsUser,
+          ssh_auth_type: 'password',
+          ssh_password: text,
+          ssh_port: 22,
+        });
+
+        state.vpsId = vps.id;
+        state.step = 'vps_install_dns_prompt';
+
+        activityLogger.log({
+          telegramId: userId,
+          action: 'add_vps',
+          resourceType: 'vps',
+          resourceId: vps.name,
+          details: { ip: vps.ip },
+        });
+
+        return bot.sendMessage(chatId,
+          `✅ SSH connection successful!\n` +
+          `Hostname: ${testResult.hostname}\n\n` +
+          `📝 Step 5/5\nDo you want to install PowerDNS on this VPS?\n(Required for DNS management)`,
+          menus.vpsInstallDNS()
+        );
+      }
+
+      // SSH Key path step
       if (state.step === 'vps_enter_key_path') {
         const keyPath = text;
         const fs = require('fs');
@@ -112,7 +166,6 @@ function createBot(db, config) {
 
         state.vpsKeyPath = keyPath;
 
-        // Test SSH connection
         await bot.sendMessage(chatId, '🔍 Testing SSH connection...');
 
         const SSHManager = require('../services/ssh');
@@ -120,6 +173,7 @@ function createBot(db, config) {
           ip: state.vpsIP,
           ssh_port: 22,
           ssh_user: state.vpsUser,
+          ssh_auth_type: 'key',
           ssh_key_path: keyPath,
         });
 
@@ -133,11 +187,11 @@ function createBot(db, config) {
           );
         }
 
-        // Create VPS in database
         const vps = db.createVPS({
           name: state.vpsName,
           ip: state.vpsIP,
           ssh_user: state.vpsUser,
+          ssh_auth_type: 'key',
           ssh_key_path: keyPath,
           ssh_port: 22,
         });
