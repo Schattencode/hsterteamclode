@@ -70,10 +70,10 @@ class VPSManager {
       // Step 3: Ensure all software is installed
       const { phpSocket } = await this._ensureVPS(ssh, progress);
 
-      // Step 4: Create site directory
+      // Step 4: Create site directory (clean old files if any)
       const sitePath = `/var/www/${domain}`;
       progress(`Creating directory: ${sitePath}`);
-      await ssh.exec(`mkdir -p ${sitePath}`);
+      await ssh.exec(`rm -rf ${sitePath} && mkdir -p ${sitePath}`);
 
       // Step 5: Extract ZIP
       progress('Extracting ZIP archive');
