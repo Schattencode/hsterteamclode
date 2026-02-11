@@ -20,11 +20,16 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     await bot.answerCallbackQuery(query.id);
 
     const isAdmin = access.user.role === 'admin';
-    const domains = isAdmin
+    const ownDomains = isAdmin
       ? db.getAllDomains()
       : db.getDomainsByUser(String(query.from.id));
 
-    if (domains.length === 0) {
+    // Get shared domains for non-admins
+    const sharedDomains = isAdmin ? [] : db.getUserSharedDomains(String(query.from.id));
+
+    const totalCount = ownDomains.length + sharedDomains.length;
+
+    if (totalCount === 0) {
       return bot.editMessageText(
         '📋 <b>Your Domains</b>\n\nNo domains configured yet.',
         {
@@ -41,10 +46,11 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
       );
     }
 
-    let text = `📋 <b>YOUR DOMAINS</b>\n\nTotal: ${domains.length} domains\n`;
+    let text = `📋 <b>YOUR DOMAINS</b>\n\nTotal: ${totalCount} domains\n`;
 
     const keyboard = [];
-    for (const d of domains) {
+
+    for (const d of ownDomains) {
       const subs = db.getSubdomainsByDomain(d.id);
       const sslIcon = d.ssl_status === 'active' ? '✅' : '⚠️';
       const statusIcon = d.status === 'active' ? '🟢' : '🔴';
@@ -60,6 +66,28 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
       keyboard.push([
         { text: `📋 Manage ${d.domain}`, callback_data: `domain_manage_${d.id}` },
       ]);
+    }
+
+    if (sharedDomains.length > 0) {
+      text += `\n\n━━━ 🔗 SHARED WITH YOU ━━━\n`;
+
+      for (const d of sharedDomains) {
+        const subs = db.getSubdomainsByDomain(d.id);
+        const sslIcon = d.ssl_status === 'active' ? '✅' : '⚠️';
+        const levelIcon = d.access_level === 'edit' ? '✏️' : '👁️';
+
+        text += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+        text += `🌐 <b>${d.domain}</b> ${levelIcon}\n`;
+        text += `🔒 SSL: ${sslIcon}\n`;
+        text += `📂 Subdomains: ${subs.length}`;
+        if (subs.length > 0) {
+          text += '\n' + subs.map(s => `   • ${s.full_domain}`).join('\n');
+        }
+
+        keyboard.push([
+          { text: `🔗 ${d.domain} (${d.access_level})`, callback_data: `domain_manage_${d.id}` },
+        ]);
+      }
     }
 
     keyboard.push([{ text: '➕ Add New Domain', callback_data: 'domain_add' }]);
@@ -111,6 +139,11 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     text += `📊 Status: ${domain.status === 'active' ? '🟢 Online' : '🔴 ' + domain.status}\n`;
     text += `⏰ Created: ${domain.created_at}\n`;
 
+    if (access.accessLevel !== 'owner') {
+      const levelIcon = access.accessLevel === 'edit' ? '✏️' : '👁️';
+      text += `\n🔗 Shared with you (${levelIcon} ${access.accessLevel})\n`;
+    }
+
     if (subs.length > 0) {
       text += `\n━━━ 📂 SUBDOMAINS (${subs.length}) ━━━\n\n`;
       for (const s of subs) {
@@ -123,7 +156,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
       chat_id: chatId,
       message_id: query.message.message_id,
       parse_mode: 'HTML',
-      ...menus.domainManage(domainId),
+      ...menus.domainManage(domainId, access.accessLevel),
     });
   });
 
@@ -402,8 +435,8 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     const domainId = parseInt(match[1], 10);
     const chatId = query.message.chat.id;
 
-    const access = await auth.checkDomainOwnership(query, domainId);
-    if (!access.allowed) return bot.answerCallbackQuery(query.id, { text: 'Access denied' });
+    const access = await auth.checkDomainOwnership(query, domainId, 'edit');
+    if (!access.allowed) return bot.answerCallbackQuery(query.id, { text: access.reason || 'Access denied', show_alert: true });
     await bot.answerCallbackQuery(query.id);
 
     const domain = db.getDomain(domainId);
@@ -440,8 +473,8 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
     const domainId = parseInt(match[1], 10);
     const chatId = query.message.chat.id;
 
-    const access = await auth.checkDomainOwnership(query, domainId);
-    if (!access.allowed) return bot.answerCallbackQuery(query.id, { text: 'Access denied' });
+    const access = await auth.checkDomainOwnership(query, domainId, 'edit');
+    if (!access.allowed) return bot.answerCallbackQuery(query.id, { text: access.reason || 'Access denied', show_alert: true });
     await bot.answerCallbackQuery(query.id);
 
     const domain = db.getDomain(domainId);
@@ -460,7 +493,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
           chat_id: chatId,
           message_id: query.message.message_id,
           parse_mode: 'HTML',
-          ...menus.domainManage(domainId),
+          ...menus.domainManage(domainId, access.accessLevel),
         }
       );
     } catch (err) {
@@ -470,7 +503,7 @@ function registerDomainHandlers(bot, db, auth, activityLogger, vpsManager, confi
         {
           chat_id: chatId,
           message_id: query.message.message_id,
-          ...menus.domainManage(domainId),
+          ...menus.domainManage(domainId, access.accessLevel),
         }
       );
     }

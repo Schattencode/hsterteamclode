@@ -86,12 +86,26 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT
 );
 
+-- Domain access sharing (team permissions)
+CREATE TABLE IF NOT EXISTS domain_access (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  domain_id INTEGER NOT NULL,
+  user_telegram_id TEXT NOT NULL,
+  access_level TEXT NOT NULL DEFAULT 'view',
+  granted_by TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE,
+  UNIQUE(domain_id, user_telegram_id)
+);
+
 -- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_domains_vps ON domains(vps_id);
 CREATE INDEX IF NOT EXISTS idx_subdomains_domain ON subdomains(domain_id);
 CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);
 CREATE INDEX IF NOT EXISTS idx_activity_logs_user ON activity_logs(user_telegram_id);
 CREATE INDEX IF NOT EXISTS idx_activity_logs_created ON activity_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_domain_access_user ON domain_access(user_telegram_id);
+CREATE INDEX IF NOT EXISTS idx_domain_access_domain ON domain_access(domain_id);
 `;
 
 function runMigrations(db) {

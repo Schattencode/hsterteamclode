@@ -17,8 +17,8 @@ function registerSubdomainHandlers(bot, db, auth, activityLogger, vpsManager, co
     const domainId = parseInt(match[1], 10);
     const chatId = query.message.chat.id;
 
-    const access = await auth.checkDomainOwnership(query, domainId);
-    if (!access.allowed) return bot.answerCallbackQuery(query.id, { text: 'Access denied' });
+    const access = await auth.checkDomainOwnership(query, domainId, 'edit');
+    if (!access.allowed) return bot.answerCallbackQuery(query.id, { text: access.reason || 'Access denied', show_alert: true });
     await bot.answerCallbackQuery(query.id);
 
     const domain = db.getDomain(domainId);
@@ -108,8 +108,8 @@ function registerSubdomainHandlers(bot, db, auth, activityLogger, vpsManager, co
     const subdomain = db.getSubdomain(subdomainId);
     if (!subdomain) return;
 
-    const access = await auth.checkDomainOwnership(query, subdomain.domain_id);
-    if (!access.allowed) return;
+    const access = await auth.checkDomainOwnership(query, subdomain.domain_id, 'edit');
+    if (!access.allowed) return bot.answerCallbackQuery(query.id, { text: access.reason || 'Access denied', show_alert: true });
 
     bot._userStates = bot._userStates || {};
     bot._userStates[query.from.id] = {
@@ -148,8 +148,8 @@ function registerSubdomainHandlers(bot, db, auth, activityLogger, vpsManager, co
     const subdomain = db.getSubdomain(subdomainId);
     if (!subdomain) return;
 
-    const access = await auth.checkDomainOwnership(query, subdomain.domain_id);
-    if (!access.allowed) return;
+    const access = await auth.checkDomainOwnership(query, subdomain.domain_id, 'edit');
+    if (!access.allowed) return bot.answerCallbackQuery(query.id, { text: access.reason || 'Access denied', show_alert: true });
 
     await bot.editMessageText(
       `🔐 Obtaining SSL certificate for ${subdomain.full_domain}...`,

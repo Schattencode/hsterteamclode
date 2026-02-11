@@ -61,16 +61,66 @@ function afterDomainDeploy(domainId) {
   };
 }
 
-function domainManage(domainId) {
+function domainManage(domainId, accessLevel) {
+  const keyboard = [];
+
+  if (accessLevel !== 'view') {
+    keyboard.push([{ text: '➕ Add Subdomain', callback_data: `subdomain_add_${domainId}` }]);
+    keyboard.push([{ text: '🔄 Update Site Files', callback_data: `domain_update_${domainId}` }]);
+    keyboard.push([{ text: '🔐 Renew SSL Certificate', callback_data: `domain_renew_ssl_${domainId}` }]);
+  }
+
+  keyboard.push([{ text: '📊 View Subdomains', callback_data: `domain_subs_${domainId}` }]);
+
+  if (accessLevel === 'owner') {
+    keyboard.push([{ text: '👥 Share Domain', callback_data: `domain_share_${domainId}` }]);
+    keyboard.push([{ text: '🗑️ Delete Domain', callback_data: `domain_delete_${domainId}` }]);
+  }
+
+  keyboard.push([{ text: '⬅️ Back to List', callback_data: 'domains_list' }]);
+
+  return { reply_markup: { inline_keyboard: keyboard } };
+}
+
+function domainShareMenu(domainId, sharedUsers) {
+  const keyboard = [];
+
+  for (const su of sharedUsers) {
+    const name = su.username ? `@${su.username}` : (su.first_name || su.user_telegram_id);
+    const levelIcon = su.access_level === 'edit' ? '✏️' : '👁️';
+    keyboard.push([
+      { text: `${levelIcon} ${name}`, callback_data: `share_manage_${domainId}_${su.user_telegram_id}` },
+    ]);
+  }
+
+  keyboard.push([{ text: '➕ Share with Member', callback_data: `share_add_${domainId}` }]);
+  keyboard.push([{ text: '⬅️ Back to Domain', callback_data: `domain_manage_${domainId}` }]);
+
+  return { reply_markup: { inline_keyboard: keyboard } };
+}
+
+function shareAccessLevel(domainId, targetTelegramId) {
   return {
     reply_markup: {
       inline_keyboard: [
-        [{ text: '➕ Add Subdomain', callback_data: `subdomain_add_${domainId}` }],
-        [{ text: '🔄 Update Site Files', callback_data: `domain_update_${domainId}` }],
-        [{ text: '🔐 Renew SSL Certificate', callback_data: `domain_renew_ssl_${domainId}` }],
-        [{ text: '📊 View Subdomains', callback_data: `domain_subs_${domainId}` }],
-        [{ text: '🗑️ Delete Domain', callback_data: `domain_delete_${domainId}` }],
-        [{ text: '⬅️ Back to List', callback_data: 'domains_list' }],
+        [{ text: '👁️ View Only', callback_data: `share_level_view_${domainId}_${targetTelegramId}` }],
+        [{ text: '✏️ Edit (Full Access)', callback_data: `share_level_edit_${domainId}_${targetTelegramId}` }],
+        [{ text: '❌ Cancel', callback_data: `domain_share_${domainId}` }],
+      ],
+    },
+  };
+}
+
+function shareManageUser(domainId, targetTelegramId, currentLevel) {
+  const otherLevel = currentLevel === 'edit' ? 'view' : 'edit';
+  const otherLabel = currentLevel === 'edit' ? '👁️ Change to View Only' : '✏️ Change to Edit';
+
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: otherLabel, callback_data: `share_level_${otherLevel}_${domainId}_${targetTelegramId}` }],
+        [{ text: '🗑️ Revoke Access', callback_data: `share_revoke_${domainId}_${targetTelegramId}` }],
+        [{ text: '⬅️ Back', callback_data: `domain_share_${domainId}` }],
       ],
     },
   };
@@ -230,6 +280,9 @@ module.exports = {
   nsConfigured,
   afterDomainDeploy,
   domainManage,
+  domainShareMenu,
+  shareAccessLevel,
+  shareManageUser,
   subdomainManage,
   confirmDelete,
   domainListItem,

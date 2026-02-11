@@ -73,27 +73,44 @@ class AuthMiddleware {
   }
 
   /**
-   * Check if user can manage a specific domain (owner or admin).
+   * Check if user can manage a specific domain (owner, admin, or shared access).
+   * Returns access object with `accessLevel` ('owner'|'edit'|'view') for shared domains.
    */
-  async checkDomainOwnership(msg, domainId) {
+  async checkDomainOwnership(msg, domainId, requiredLevel = 'view') {
     const access = await this.checkAccess(msg);
     if (!access.allowed) return access;
 
-    if (access.user.role === 'admin') return access;
+    if (access.user.role === 'admin') {
+      return { ...access, accessLevel: 'owner' };
+    }
 
     const domain = this.db.getDomain(domainId);
     if (!domain) {
       return { allowed: false, reason: 'Domain not found.' };
     }
 
-    if (domain.created_by !== String(msg.from.id)) {
-      return {
-        allowed: false,
-        reason: '🚫 Access Denied\n\nYou can only manage domains you created.',
-      };
+    // Owner has full access
+    if (domain.created_by === String(msg.from.id)) {
+      return { ...access, accessLevel: 'owner' };
     }
 
-    return access;
+    // Check shared access
+    const shared = this.db.getDomainAccess(domainId, String(msg.from.id));
+    if (shared) {
+      // Check if the required level is met
+      if (requiredLevel === 'edit' && shared.access_level === 'view') {
+        return {
+          allowed: false,
+          reason: '🚫 Access Denied\n\nYou have view-only access to this domain.',
+        };
+      }
+      return { ...access, accessLevel: shared.access_level };
+    }
+
+    return {
+      allowed: false,
+      reason: '🚫 Access Denied\n\nYou can only manage domains you created or that have been shared with you.',
+    };
   }
 }
 

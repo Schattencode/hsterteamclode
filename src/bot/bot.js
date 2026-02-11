@@ -12,6 +12,7 @@ const { registerDomainHandlers } = require('./handlers/domain');
 const { registerSubdomainHandlers } = require('./handlers/subdomain');
 const { registerAdminHandlers } = require('./handlers/admin');
 const { registerTeamHandlers } = require('./handlers/team');
+const { registerShareHandlers } = require('./handlers/share');
 
 /**
  * Initialize and configure the Telegram bot with all handlers.
@@ -34,6 +35,7 @@ function createBot(db, config) {
   registerSubdomainHandlers(bot, db, auth, activityLogger, vpsManager, config);
   registerAdminHandlers(bot, db, auth, activityLogger, config);
   registerTeamHandlers(bot, db, auth, activityLogger);
+  registerShareHandlers(bot, db, auth, activityLogger);
 
   // ────────────────────────────────────────────────────
   // TEXT MESSAGE STATE MACHINE
@@ -560,7 +562,7 @@ function createBot(db, config) {
 
         await bot.sendMessage(chatId, report, {
           parse_mode: 'HTML',
-          ...menus.domainManage(domainId),
+          ...menus.domainManage(domainId, 'edit'),
         });
         return;
       }

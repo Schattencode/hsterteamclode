@@ -362,6 +362,58 @@ class DB {
   }
 
   // ──────────────────────────────────────
+  // Domain Access (Sharing) Operations
+  // ──────────────────────────────────────
+
+  shareDomain(domainId, userTelegramId, accessLevel, grantedBy) {
+    this._run(
+      `INSERT OR REPLACE INTO domain_access (domain_id, user_telegram_id, access_level, granted_by)
+       VALUES (?, ?, ?, ?)`,
+      [domainId, String(userTelegramId), accessLevel || 'view', String(grantedBy)]
+    );
+  }
+
+  unshareDomain(domainId, userTelegramId) {
+    this._run(
+      'DELETE FROM domain_access WHERE domain_id = ? AND user_telegram_id = ?',
+      [domainId, String(userTelegramId)]
+    );
+  }
+
+  unshareAllForDomain(domainId) {
+    this._run('DELETE FROM domain_access WHERE domain_id = ?', [domainId]);
+  }
+
+  getDomainAccess(domainId, userTelegramId) {
+    return this._get(
+      'SELECT * FROM domain_access WHERE domain_id = ? AND user_telegram_id = ?',
+      [domainId, String(userTelegramId)]
+    );
+  }
+
+  getDomainSharedUsers(domainId) {
+    return this._all(
+      `SELECT da.*, u.username, u.first_name, u.role
+       FROM domain_access da
+       LEFT JOIN users u ON u.telegram_id = da.user_telegram_id
+       WHERE da.domain_id = ?
+       ORDER BY da.created_at`,
+      [domainId]
+    );
+  }
+
+  getUserSharedDomains(userTelegramId) {
+    return this._all(
+      `SELECT d.*, da.access_level
+       FROM domain_access da
+       JOIN domains d ON d.id = da.domain_id
+       WHERE da.user_telegram_id = ?
+       ORDER BY d.domain`,
+      [String(userTelegramId)]
+    );
+  }
+
+  // ──────────────────────────────────────
   // Activity Log Operations
   // ──────────────────────────────────────
 
