@@ -27,7 +27,8 @@ class CloudflareManager {
   }
 
   /**
-   * Create a DNS zone for a domain. Returns zone ID and assigned nameservers.
+   * Create a DNS zone for a domain, or fetch existing one if it already exists.
+   * Returns zone ID and assigned nameservers.
    */
   async createZone(domain) {
     try {
@@ -50,7 +51,42 @@ class CloudflareManager {
       };
     } catch (error) {
       const msg = error.response?.data?.errors?.[0]?.message || error.message;
+
+      // Zone already exists — fetch it instead
+      if (msg.includes('already exists')) {
+        logger.info('Zone already exists, fetching', { domain });
+        return this.getZone(domain);
+      }
+
       throw new Error(`Failed to create zone for ${domain}: ${msg}`);
+    }
+  }
+
+  /**
+   * Fetch an existing zone by domain name.
+   */
+  async getZone(domain) {
+    try {
+      const res = await axios.get(`${this.baseUrl}/zones`, {
+        headers: this.headers,
+        params: { name: domain },
+      });
+
+      if (!res.data.success || !res.data.result.length) {
+        throw new Error(`Zone not found for ${domain}`);
+      }
+
+      const zone = res.data.result[0];
+      logger.info('Cloudflare zone fetched', { domain, zoneId: zone.id });
+
+      return {
+        zoneId: zone.id,
+        nameservers: zone.name_servers,
+        status: zone.status,
+      };
+    } catch (error) {
+      const msg = error.response?.data?.errors?.[0]?.message || error.message;
+      throw new Error(`Failed to fetch zone for ${domain}: ${msg}`);
     }
   }
 
