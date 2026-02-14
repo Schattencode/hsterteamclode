@@ -44,6 +44,9 @@ class CloudflareManager {
       const zone = res.data.result;
       logger.info('Cloudflare zone created', { domain, zoneId: zone.id });
 
+      // Set SSL mode to "full" to prevent redirect loops when proxy is enabled
+      await this.setSSLMode(zone.id, 'full');
+
       return {
         zoneId: zone.id,
         nameservers: zone.name_servers,
@@ -52,10 +55,14 @@ class CloudflareManager {
     } catch (error) {
       const msg = error.response?.data?.errors?.[0]?.message || error.message;
 
-      // Zone already exists — fetch it instead
+      // Zone already exists — fetch it and ensure SSL mode is correct
       if (msg.includes('already exists')) {
         logger.info('Zone already exists, fetching', { domain });
-        return this.getZone(domain);
+        const existing = await this.getZone(domain);
+        await this.setSSLMode(existing.zoneId, 'full').catch(err => {
+          logger.warn('Could not set SSL mode on existing zone', { domain, error: err.message });
+        });
+        return existing;
       }
 
       throw new Error(`Failed to create zone for ${domain}: ${msg}`);
@@ -138,6 +145,32 @@ class CloudflareManager {
     } catch (error) {
       logger.warn('Failed to delete A record', { name, error: error.message });
       return false;
+    }
+  }
+
+  /**
+   * Set SSL mode for a zone (off, flexible, full, strict).
+   * "full" requires a cert on origin (self-signed OK).
+   * "strict" requires a valid cert (e.g. Let's Encrypt).
+   */
+  async setSSLMode(zoneId, mode = 'full') {
+    try {
+      const res = await axios.patch(
+        `${this.baseUrl}/zones/${zoneId}/settings/ssl`,
+        { value: mode },
+        { headers: this.headers }
+      );
+
+      if (!res.data.success) {
+        throw new Error(res.data.errors?.[0]?.message || 'Failed to set SSL mode');
+      }
+
+      logger.info('Cloudflare SSL mode set', { zoneId, mode });
+      return res.data.result;
+    } catch (error) {
+      const msg = error.response?.data?.errors?.[0]?.message || error.message;
+      logger.error('Failed to set Cloudflare SSL mode', { zoneId, mode, error: msg });
+      throw new Error(`Failed to set SSL mode to "${mode}": ${msg}`);
     }
   }
 
