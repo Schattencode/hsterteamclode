@@ -4,6 +4,7 @@ const CloudflareManager = require('./cloudflare');
 const SSLManager = require('./ssl');
 const FileManager = require('./fileManager');
 const Installer = require('./installer');
+const HealthCheck = require('./healthCheck');
 const path = require('path');
 const fs = require('fs/promises');
 const logger = require('../utils/logger');
@@ -164,6 +165,19 @@ class VPSManager {
         success: true,
       });
 
+      // Post-deploy health check
+      progress('Running health check');
+      let health = null;
+      try {
+        const hc = new HealthCheck(ssh);
+        health = await hc.check(domain, vps.ip, sitePath);
+        if (!health.files.ok) {
+          logger.warn('Health check: index file missing', { domain, detail: health.files.detail });
+        }
+      } catch (err) {
+        logger.warn('Health check failed', { domain, error: err.message });
+      }
+
       // Cleanup
       await fileManager.cleanup(extractedPath);
       await fileManager.removeFile(zipFilePath);
@@ -172,12 +186,13 @@ class VPSManager {
       return {
         success: true,
         domain,
-        https_url: `https://${domain}`,
+        https_url: sslResult.success ? `https://${domain}` : `http://${domain}`,
         site_path: sitePath,
         fileCount,
         totalSize,
         sslActive: sslResult.success,
         sslExpiry: sslResult.expiry,
+        health,
       };
     } catch (error) {
       this.db.logActivity({

@@ -1,3 +1,5 @@
+// DEPRECATED: PowerDNSManager is not used. All DNS is handled by CloudflareManager.
+// Kept for reference only. Safe to delete.
 const axios = require('axios');
 const dns = require('dns').promises;
 const logger = require('../utils/logger');
