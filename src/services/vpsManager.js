@@ -117,7 +117,8 @@ class VPSManager {
       // Step 11: Obtain SSL with retry (DNS may need extra seconds)
       progress('Obtaining SSL certificate');
       let sslResult = { success: false, expiry: null };
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      const maxSSLAttempts = 3;
+      for (let attempt = 1; attempt <= maxSSLAttempts; attempt++) {
         try {
           sslResult = await ssl.obtainCertificate(
             domain,
@@ -125,24 +126,29 @@ class VPSManager {
             false,
             this.config.ssl.staging
           );
-          break;
+          if (sslResult.success) break;
         } catch (err) {
-          if (attempt < 2) {
-            progress('SSL: waiting for DNS propagation, retrying...');
-            await new Promise(r => setTimeout(r, 15000));
+          if (attempt < maxSSLAttempts) {
+            const waitSec = attempt === 1 ? 30 : 60;
+            progress(`SSL: waiting ${waitSec}s for DNS propagation (attempt ${attempt}/${maxSSLAttempts})...`);
+            await new Promise(r => setTimeout(r, waitSec * 1000));
           } else {
-            logger.warn('SSL certificate failed, site will work on HTTP', { domain, error: err.message });
+            logger.warn('SSL certificate failed, site will work on HTTP only', { domain, error: err.message });
           }
         }
       }
 
-      // Step 11: Update database
+      // Step 12: Update database — reflect actual SSL state
+      const sslStatus = sslResult.success ? 'active' : 'ssl_failed';
+      if (!sslResult.success) {
+        progress('SSL failed — site available on HTTP only');
+      }
       this.db.updateDomain(
         this.db.getDomainByName(domain).id,
         {
           site_path: sitePath,
           nginx_config_path: configPath,
-          ssl_status: sslResult.success ? 'active' : 'pending',
+          ssl_status: sslStatus,
           ssl_expiry: sslResult.expiry,
           status: 'active',
         }
@@ -259,10 +265,11 @@ class VPSManager {
       progress('Reloading Nginx');
       await ssh.exec('systemctl reload nginx');
 
-      // SSL with retry (DNS may need a few extra seconds)
+      // SSL with retry (DNS may need extra time to propagate)
       progress('Obtaining SSL certificate');
       let sslResult = { success: false, expiry: null };
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      const maxSSLAttempts = 3;
+      for (let attempt = 1; attempt <= maxSSLAttempts; attempt++) {
         try {
           sslResult = await ssl.obtainCertificate(
             fullDomain,
@@ -270,15 +277,20 @@ class VPSManager {
             true,
             this.config.ssl.staging
           );
-          break;
+          if (sslResult.success) break;
         } catch (err) {
-          if (attempt < 2) {
-            progress('SSL: waiting for DNS propagation, retrying...');
-            await new Promise(r => setTimeout(r, 15000));
+          if (attempt < maxSSLAttempts) {
+            const waitSec = attempt === 1 ? 30 : 60;
+            progress(`SSL: waiting ${waitSec}s for DNS propagation (attempt ${attempt}/${maxSSLAttempts})...`);
+            await new Promise(r => setTimeout(r, waitSec * 1000));
           } else {
             logger.warn('SSL certificate failed for subdomain', { fullDomain, error: err.message });
           }
         }
+      }
+
+      if (!sslResult.success) {
+        progress('SSL failed — subdomain available on HTTP only');
       }
 
       // Save to database
@@ -288,7 +300,7 @@ class VPSManager {
         full_domain: fullDomain,
         site_path: sitePath,
         nginx_config_path: configPath,
-        ssl_status: sslResult.success ? 'active' : 'pending',
+        ssl_status: sslResult.success ? 'active' : 'ssl_failed',
         ssl_expiry: sslResult.expiry,
         created_by: userTelegramId,
       });

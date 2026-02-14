@@ -41,11 +41,44 @@ class SSLManager {
     try {
       const output = await this.ssh.exec(command, 180000); // 3 minute timeout for SSL
 
+      // Validate: check that cert files actually exist on disk
+      const certPath = `/etc/letsencrypt/live/${domain}/fullchain.pem`;
+      const keyPath = `/etc/letsencrypt/live/${domain}/privkey.pem`;
+
+      const certExists = await this.ssh.exec(`test -f ${certPath} && echo "OK" || echo "MISSING"`)
+        .then(out => out.trim() === 'OK')
+        .catch(() => false);
+
+      const keyExists = await this.ssh.exec(`test -f ${keyPath} && echo "OK" || echo "MISSING"`)
+        .then(out => out.trim() === 'OK')
+        .catch(() => false);
+
+      if (!certExists || !keyExists) {
+        logger.error('SSL cert files missing after certbot', { domain, certExists, keyExists });
+        return {
+          success: false,
+          expiry: null,
+          message: 'Certbot ran but certificate files are missing',
+        };
+      }
+
+      // Validate: nginx config must pass syntax check after certbot modifications
+      try {
+        await this.ssh.exec('nginx -t');
+      } catch (nginxErr) {
+        logger.error('Nginx config invalid after certbot', { domain, error: nginxErr.message });
+        return {
+          success: false,
+          expiry: null,
+          message: `Nginx config broken after certbot: ${nginxErr.message}`,
+        };
+      }
+
       // Try to parse expiry from certbot output
       const expiryMatch = output.match(/(\d{4}-\d{2}-\d{2})/);
       const expiry = expiryMatch ? expiryMatch[1] : null;
 
-      logger.info('SSL certificate obtained', { domain, expiry });
+      logger.info('SSL certificate obtained and verified', { domain, expiry });
 
       return {
         success: true,
