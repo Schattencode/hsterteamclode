@@ -34,7 +34,7 @@ class CloudflareManager {
     try {
       const res = await axios.post(`${this.baseUrl}/zones`, {
         name: domain,
-        jump_start: true,
+        jump_start: false,
       }, { headers: this.headers });
 
       if (!res.data.success) {
@@ -98,15 +98,51 @@ class CloudflareManager {
   }
 
   /**
-   * Add an A record to a zone.
+   * Add or update an A record (upsert). Checks for existing records first
+   * to avoid duplicates. Updates IP if record exists with different IP.
    */
   async addARecord(zoneId, name, ip, proxied = false) {
     try {
+      // Check for existing A records with this name
+      const existing = await axios.get(`${this.baseUrl}/zones/${zoneId}/dns_records`, {
+        headers: this.headers,
+        params: { type: 'A', name },
+      });
+
+      const records = existing.data.result || [];
+
+      if (records.length > 0) {
+        const match = records.find(r => r.content === ip);
+        if (match) {
+          logger.info('Cloudflare A record already exists', { zoneId, name, ip });
+          return match;
+        }
+
+        // IP differs — update the first record, delete any duplicates
+        const [first, ...duplicates] = records;
+        const res = await axios.put(
+          `${this.baseUrl}/zones/${zoneId}/dns_records/${first.id}`,
+          { type: 'A', name, content: ip, ttl: 1, proxied },
+          { headers: this.headers }
+        );
+
+        for (const dup of duplicates) {
+          await axios.delete(
+            `${this.baseUrl}/zones/${zoneId}/dns_records/${dup.id}`,
+            { headers: this.headers }
+          ).catch(err => logger.warn('Failed to delete duplicate A record', { id: dup.id, error: err.message }));
+        }
+
+        logger.info('Cloudflare A record updated', { zoneId, name, ip, duplicatesRemoved: duplicates.length });
+        return res.data.result;
+      }
+
+      // No existing record — create new
       const res = await axios.post(`${this.baseUrl}/zones/${zoneId}/dns_records`, {
         type: 'A',
         name,
         content: ip,
-        ttl: 1, // 1 = auto
+        ttl: 1,
         proxied,
       }, { headers: this.headers });
 
