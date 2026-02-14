@@ -113,12 +113,18 @@ class SSHManager {
     });
   }
 
+  static UPLOAD_SKIP = new Set([
+    '__MACOSX', '.DS_Store', 'Thumbs.db', 'desktop.ini', '.git',
+  ]);
+
   async uploadDirectory(localDir, remoteDir) {
     await this.exec(`mkdir -p ${remoteDir}`);
 
     const items = fs.readdirSync(localDir);
 
     for (const item of items) {
+      if (SSHManager.UPLOAD_SKIP.has(item)) continue;
+
       const localPath = path.join(localDir, item);
       const remotePath = `${remoteDir}/${item}`;
       const stat = fs.statSync(localPath);

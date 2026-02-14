@@ -9,6 +9,7 @@ class NginxConfigGenerator {
     const sock = phpSocket || '/var/run/php/php8.1-fpm.sock';
     return `server {
     listen 80;
+    listen [::]:80;
     server_name ${domain} www.${domain};
 
     root ${sitePath};
@@ -35,7 +36,7 @@ class NginxConfigGenerator {
 
     location ~* \\.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot)$ {
         expires 30d;
-        add_header Cache-Control "public, immutable";
+        add_header Cache-Control "public, max-age=86400, must-revalidate";
     }
 
     client_max_body_size 100M;
@@ -53,6 +54,7 @@ class NginxConfigGenerator {
     const sock = phpSocket || '/var/run/php/php8.1-fpm.sock';
     return `server {
     listen 80;
+    listen [::]:80;
     server_name ${fullDomain};
 
     root ${sitePath};
@@ -79,7 +81,7 @@ class NginxConfigGenerator {
 
     location ~* \\.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot)$ {
         expires 30d;
-        add_header Cache-Control "public, immutable";
+        add_header Cache-Control "public, max-age=86400, must-revalidate";
     }
 
     client_max_body_size 100M;
