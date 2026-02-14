@@ -42,8 +42,85 @@ class FileManager {
   }
 
   /**
+   * Junk entries created by macOS and other OS artefacts.
+   */
+  static JUNK_NAMES = new Set(['__MACOSX', '.DS_Store', 'Thumbs.db', 'desktop.ini']);
+
+  /**
+   * Remove OS junk (__MACOSX, .DS_Store, Thumbs.db) from a directory recursively.
+   */
+  async _removeJunk(dir) {
+    const items = await fsp.readdir(dir);
+    for (const item of items) {
+      const fullPath = path.join(dir, item);
+      if (FileManager.JUNK_NAMES.has(item)) {
+        await fsp.rm(fullPath, { recursive: true, force: true });
+        logger.info('Removed junk entry', { path: fullPath });
+        continue;
+      }
+      const stat = await fsp.stat(fullPath);
+      if (stat.isDirectory()) {
+        await this._removeJunk(fullPath);
+      }
+    }
+  }
+
+  /**
+   * Find the nearest directory containing an index file (index.html/index.php/index.htm).
+   * Searches up to maxDepth levels deep. Returns null if not found.
+   */
+  async _findIndexDir(dir, maxDepth = 3) {
+    if (maxDepth < 0) return null;
+
+    const items = await fsp.readdir(dir);
+    const indexFiles = ['index.html', 'index.php', 'index.htm'];
+
+    if (items.some(item => indexFiles.includes(item.toLowerCase()))) {
+      return dir;
+    }
+
+    for (const item of items) {
+      const fullPath = path.join(dir, item);
+      const stat = await fsp.stat(fullPath);
+      if (stat.isDirectory()) {
+        const found = await this._findIndexDir(fullPath, maxDepth - 1);
+        if (found) return found;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Flatten: move all files from sourceDir into targetDir using a temp directory
+   * to avoid name collisions (fixes H1).
+   */
+  async _flattenInto(sourceDir, targetDir) {
+    const tmpDir = path.join(path.dirname(targetDir), `_flatten_tmp_${Date.now()}`);
+    await fsp.mkdir(tmpDir, { recursive: true });
+
+    // Move contents to temp dir first
+    const items = await fsp.readdir(sourceDir);
+    for (const item of items) {
+      await fsp.rename(path.join(sourceDir, item), path.join(tmpDir, item));
+    }
+
+    // Remove the now-empty source (or any leftovers like hidden files)
+    await fsp.rm(sourceDir, { recursive: true, force: true });
+
+    // Move from temp dir to target
+    const tmpItems = await fsp.readdir(tmpDir);
+    for (const item of tmpItems) {
+      await fsp.rename(path.join(tmpDir, item), path.join(targetDir, item));
+    }
+
+    await fsp.rm(tmpDir, { recursive: true, force: true });
+  }
+
+  /**
    * Extract a ZIP file to a temporary directory.
-   * Returns the path to the extracted directory.
+   * Handles macOS junk, wrapper folders, and nested structures.
+   * Returns the path to the extracted directory with index file at root.
    */
   async extractZip(zipPath) {
     const extractDir = zipPath.replace(/\.zip$/i, '') + '_extracted';
@@ -57,28 +134,62 @@ class FileManager {
           .on('error', reject);
       });
 
-      // Check if ZIP contained a single root folder and flatten if so
-      const items = await fsp.readdir(extractDir);
-      if (items.length === 1) {
-        const singleItem = path.join(extractDir, items[0]);
-        const stat = await fsp.stat(singleItem);
-        if (stat.isDirectory()) {
-          // Move contents up one level
-          const innerItems = await fsp.readdir(singleItem);
-          for (const inner of innerItems) {
-            await fsp.rename(
-              path.join(singleItem, inner),
-              path.join(extractDir, inner)
-            );
+      // Step 1: Remove OS junk (__MACOSX, .DS_Store, etc.)
+      await this._removeJunk(extractDir);
+
+      // Step 2: Flatten until index file is at root (max 3 levels)
+      let indexDir = await this._findIndexDir(extractDir, 0);
+      let flattened = 0;
+      const maxFlatten = 3;
+
+      while (!indexDir && flattened < maxFlatten) {
+        const items = await fsp.readdir(extractDir);
+        // Only flatten if there's a single directory remaining
+        if (items.length === 1) {
+          const singleItem = path.join(extractDir, items[0]);
+          const stat = await fsp.stat(singleItem);
+          if (stat.isDirectory()) {
+            await this._flattenInto(singleItem, extractDir);
+            flattened++;
+            indexDir = await this._findIndexDir(extractDir, 0);
+            continue;
           }
-          await fsp.rmdir(singleItem);
+        }
+        break;
+      }
+
+      // Step 3: If index still not at root, search deeper and flatten to it
+      if (!indexDir) {
+        indexDir = await this._findIndexDir(extractDir, maxFlatten);
+        if (indexDir && indexDir !== extractDir) {
+          await this._flattenInto(indexDir, extractDir);
+          // Clean up empty parent dirs left behind
+          await this._removeEmptyDirs(extractDir);
         }
       }
 
-      logger.info('ZIP extracted', { zipPath, extractDir });
+      logger.info('ZIP extracted', { zipPath, extractDir, flattened });
       return extractDir;
     } catch (error) {
       throw new Error(`Failed to extract ZIP: ${error.message}`);
+    }
+  }
+
+  /**
+   * Remove empty directories recursively (bottom-up cleanup after flatten).
+   */
+  async _removeEmptyDirs(dir) {
+    const items = await fsp.readdir(dir);
+    for (const item of items) {
+      const fullPath = path.join(dir, item);
+      const stat = await fsp.stat(fullPath);
+      if (stat.isDirectory()) {
+        await this._removeEmptyDirs(fullPath);
+        const remaining = await fsp.readdir(fullPath);
+        if (remaining.length === 0) {
+          await fsp.rm(fullPath, { recursive: true, force: true });
+        }
+      }
     }
   }
 
